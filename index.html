@@ -3,288 +3,313 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>サッカー部 朝練（自主練）参加管理システム</title>
+    <title>サッカー部 朝練参加状況・リアルタイム共有システム</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome for Icons -->
+    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- EmailJS SDK -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <!-- Firebase JS SDKs (v9 Compat for easy single-file Realtime DB integration) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+
     <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .tap-btn { transition: all 0.15s ease-in-out; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .tap-btn { transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); }
         .tap-btn:active { transform: scale(0.95); }
-        /* Custom scrollbar for better mobile feel */
+        /* Smooth custom scrollbars */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800 pb-12">
+<body class="bg-slate-100 min-h-screen text-slate-800 pb-16">
 
-    <!-- Application Header -->
-    <header class="bg-emerald-700 text-white shadow-lg sticky top-0 z-40">
+    <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-40">
         <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center space-x-3">
-                <i class="fa-solid font-bold fa-futbol text-2xl text-emerald-300"></i>
+                <div class="w-10 h-10 bg-emerald-800 rounded-full flex items-center justify-center border border-emerald-500 shadow-inner">
+                    <i class="fa-solid fa-futbol text-xl text-emerald-300"></i>
+                </div>
                 <div>
-                    <h1 class="font-bold text-lg leading-tight">サッカー部 朝練管理</h1>
-                    <p class="text-xs text-emerald-200">自主練参加・緊急連絡システム</p>
+                    <h1 class="font-bold text-base sm:text-lg leading-tight flex items-center gap-2">
+                        サッカー部 朝練管理
+                        <span id="sync-status-badge" class="text-[10px] bg-emerald-900/80 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/50 flex items-center gap-1 font-normal">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
+                            <span id="sync-status-text">ローカル動作中</span>
+                        </span>
+                    </h1>
+                    <p class="text-xs text-emerald-200">出欠集計・自主練・リアルタイム共有</p>
                 </div>
             </div>
-            <!-- Current Month Selector Header Pill -->
-            <div class="flex items-center bg-emerald-800/60 backdrop-blur-sm rounded-lg px-2 py-1 border border-emerald-600/50">
+
+            <!-- Month Selector Pill in Header -->
+            <div class="flex items-center bg-emerald-900/60 backdrop-blur-md rounded-lg px-2.5 py-1.5 border border-emerald-500/40 shadow-inner">
                 <i class="fa-regular fa-calendar-days text-emerald-300 mr-2 text-xs"></i>
-                <select id="global-month-select" class="bg-transparent text-white font-medium text-sm focus:outline-none cursor-pointer" onchange="handleMonthChange(this.value)">
-                    <!-- Options populated dynamically -->
+                <select id="global-month-select" class="bg-transparent text-white font-bold text-xs sm:text-sm focus:outline-none cursor-pointer" onchange="handleMonthChange(this.value)">
+                    <!-- Dynamic Month Options -->
                 </select>
-                <button onclick="promptAddNewMonth()" class="ml-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded px-1.5 py-0.5" title="対象月を追加">
-                    <i class="fa-solid fa-plus"></i>
+                <button onclick="promptAddNewMonth()" class="ml-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded px-2 py-1 font-bold shadow tap-btn" title="新しい対象月を追加">
+                    <i class="fa-solid fa-plus mr-0.5"></i>追加
                 </button>
             </div>
         </div>
 
         <!-- Navigation Tabs -->
-        <div class="max-w-4xl mx-auto px-2 flex border-t border-emerald-600/40 bg-emerald-800">
-            <button id="tab-btn-student" onclick="switchTab('student')" class="flex-1 py-2.5 text-center font-semibold text-sm transition border-b-2 border-amber-400 text-amber-300">
-                <i class="fa-solid fa-pen-to-square mr-1.5"></i>部員用 入力
+        <nav class="max-w-4xl mx-auto px-2 flex border-t border-emerald-600/40 bg-emerald-800/90 text-xs sm:text-sm font-semibold">
+            <button id="tab-btn-student" onclick="switchTab('student')" class="flex-1 py-3 text-center transition border-b-2 border-amber-400 text-amber-300 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-pen-to-square"></i>部員用 入力
             </button>
-            <button id="tab-btn-dashboard" onclick="switchTab('dashboard')" class="flex-1 py-2.5 text-center font-semibold text-sm transition border-b-2 border-transparent text-emerald-100 hover:text-white">
-                <i class="fa-solid fa-chart-pie mr-1.5"></i>集計・確認
+            <button id="tab-btn-dashboard" onclick="switchTab('dashboard')" class="flex-1 py-3 text-center transition border-b-2 border-transparent text-emerald-100 hover:text-white flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-chart-pie"></i>集計・確認
             </button>
-            <button id="tab-btn-admin" onclick="switchTab('admin')" class="flex-1 py-2.5 text-center font-semibold text-sm transition border-b-2 border-transparent text-emerald-100 hover:text-white">
-                <i class="fa-solid fa-user-shield mr-1.5"></i>顧問用 設定
+            <button id="tab-btn-admin" onclick="switchTab('admin')" class="flex-1 py-3 text-center transition border-b-2 border-transparent text-emerald-100 hover:text-white flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-user-shield"></i>顧問用 設定
             </button>
-        </div>
+        </nav>
     </header>
 
     <main class="max-w-4xl mx-auto px-3 sm:px-4 mt-4">
 
-        <!-- Emergency Alert Banner (Shown between 20:00 previous day and 07:00 today) -->
-        <div id="emergency-banner" class="hidden mb-4 bg-gradient-to-r from-red-600 to-rose-600 text-white p-4 rounded-xl shadow-md border-2 border-red-400 animate-pulse">
-            <div class="flex items-start justify-between">
-                <div class="flex items-center space-x-2">
-                    <span class="text-2xl">🚨</span>
+        <!-- Toast Notification Container -->
+        <div id="toast-message" class="hidden fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 transition-opacity duration-300 border border-slate-700 backdrop-blur-md">
+            <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <span id="toast-text" class="text-xs sm:text-sm font-medium">更新しました</span>
+        </div>
+
+        <!-- Urgent Emergency Change Banner (Active 20:00 previous day to morning practice start) -->
+        <div id="emergency-banner" class="hidden mb-4 bg-gradient-to-r from-rose-600 via-red-600 to-amber-600 text-white p-4 rounded-2xl shadow-lg border-2 border-red-400 animate-pulse">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-start space-x-3">
+                    <div class="p-2 bg-white/20 rounded-xl text-xl shrink-0">🚨</div>
                     <div>
-                        <h2 class="font-bold text-base sm:text-lg">【直前連絡】本日の朝練 予定変更・急遽不参加</h2>
-                        <p class="text-xs text-red-100">前日20:00〜朝練開始前の緊急変更手続きです</p>
+                        <h2 class="font-extrabold text-sm sm:text-base">【直前連絡】本日の朝練 予定変更・急遽不参加</h2>
+                        <p class="text-xs text-red-100">前日20:00〜朝練開始前までの緊急手続きです。理由の入力が必須となります。</p>
                     </div>
                 </div>
-                <button onclick="openEmergencyModal()" class="bg-white text-red-700 font-bold px-3 py-1.5 rounded-lg text-xs shadow hover:bg-red-50 tap-btn">
-                    今すぐ緊急連絡
+                <button onclick="openEmergencyModal()" class="bg-white text-red-700 font-extrabold px-4 py-2 rounded-xl text-xs shadow-md hover:bg-red-50 tap-btn shrink-0 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    <span>今すぐ緊急連絡送信</span>
                 </button>
             </div>
         </div>
 
-        <!-- Notification Toast -->
-        <div id="toast-message" class="hidden fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 transition-opacity duration-300">
-            <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
-            <span id="toast-text" class="text-sm font-medium">保存されました</span>
-        </div>
-
         <!-- SECTION 1: STUDENT VIEW (部員用入力画面) -->
         <section id="view-student" class="space-y-4">
-            <!-- Student Selection / Registration Header Card -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <!-- Student Header Selection & Fast-Register Card -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">部員名を選択または新規入力</label>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-user-tag text-emerald-600 mr-1"></i>部員名を選択 (または新規登録)
+                        </label>
                         <div class="flex gap-2">
-                            <select id="student-name-select" onchange="onStudentSelectChange()" class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold">
+                            <select id="student-name-select" onchange="onStudentSelectChange()" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner">
                                 <option value="">-- 名前を選択してください --</option>
                             </select>
-                            <button onclick="promptRegisterStudent()" class="bg-emerald-600 text-white px-3 py-2 rounded-lg font-semibold text-xs flex items-center shrink-0 hover:bg-emerald-700 tap-btn">
-                                <i class="fa-solid fa-user-plus mr-1"></i>新規部員
+                            <button onclick="promptRegisterStudent()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center shrink-0 tap-btn shadow-sm">
+                                <i class="fa-solid fa-user-plus mr-1.5"></i>新規登録
                             </button>
                         </div>
                     </div>
-                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
-                        <div><span class="font-semibold text-slate-700">対象月:</span> <span id="student-view-month" class="font-bold text-emerald-700">----年--月</span></div>
-                        <div><span class="font-semibold text-slate-700">基本場所:</span> <span id="student-default-place" class="font-bold text-slate-800">グラウンド</span></div>
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/80 text-xs text-slate-600 flex flex-wrap sm:flex-col justify-around gap-y-1">
+                        <div><span class="text-slate-500">対象年月:</span> <span id="student-view-month" class="font-extrabold text-emerald-700 ml-1">----年--月</span></div>
+                        <div><span class="text-slate-500">基本場所:</span> <span id="student-default-place" class="font-bold text-slate-800 ml-1">グラウンド</span></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Bulk Operation Actions Card -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-2">
-                <span class="text-xs font-bold text-slate-600"><i class="fa-solid fa-bolt text-amber-500 mr-1"></i>一括回答 helper:</span>
-                <div class="flex flex-wrap gap-1.5">
-                    <button onclick="applyBulkAnswer('O')" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-2.5 py-1.5 rounded-md border border-emerald-300 tap-btn">
-                        全日 〇 (参加)
+            <!-- Fast Bulk Action Helper Bar -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                <span class="text-xs font-bold text-slate-700 flex items-center">
+                    <i class="fa-solid fa-bolt text-amber-500 mr-1.5 text-sm"></i>一括入力ヘルパー (ワンタップ選択):
+                </span>
+                <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <button onclick="applyBulkAnswer('O')" class="flex-1 sm:flex-none bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-300 tap-btn flex items-center justify-center gap-1">
+                        <span>全日 〇 (参加)</span>
                     </button>
-                    <button onclick="applyBulkAnswer('O_WEEKDAY')" class="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs font-bold px-2.5 py-1.5 rounded-md border border-blue-300 tap-btn">
-                        平日のみ 〇
+                    <button onclick="applyBulkAnswer('O_WEEKDAY')" class="flex-1 sm:flex-none bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold px-3 py-2 rounded-xl border border-blue-300 tap-btn flex items-center justify-center gap-1">
+                        <span>平日のみ 〇</span>
                     </button>
-                    <button onclick="applyBulkAnswer('X')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs font-bold px-2.5 py-1.5 rounded-md border border-rose-300 tap-btn">
-                        全日 ✕ (不参加)
+                    <button onclick="applyBulkAnswer('X')" class="flex-1 sm:flex-none bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold px-3 py-2 rounded-xl border border-rose-300 tap-btn flex items-center justify-center gap-1">
+                        <span>全日 ✕ (不参加)</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Dynamic Day-by-Day Schedule List -->
+            <!-- Dynamic Schedule Cards Container -->
             <div id="student-schedule-list" class="space-y-3">
-                <!-- JS Inject: Days Cards -->
+                <!-- Dynamically generated day cards with large touch pill buttons -->
             </div>
 
-            <!-- Save Form Button -->
+            <!-- Sticky Submit / Save Floating Button -->
             <div class="sticky bottom-4 pt-2">
-                <button onclick="saveStudentSchedule()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg border border-emerald-500 text-base flex items-center justify-center space-x-2 tap-btn">
+                <button onclick="saveStudentSchedule()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 px-4 rounded-2xl shadow-xl border border-emerald-500 text-sm sm:text-base flex items-center justify-center space-x-2 tap-btn">
                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
-                    <span>この内容で回答を提出・保存する</span>
+                    <span>回答をクラウドに送信・保存する</span>
                 </button>
             </div>
         </section>
 
         <!-- SECTION 2: DASHBOARD VIEW (集計・確認画面) -->
         <section id="view-dashboard" class="hidden space-y-4">
-            <!-- Dashboard Top Summary Header -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <!-- Header Summary & CSV Export -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
-                        <h2 class="text-base font-bold text-slate-800 flex items-center">
-                            <i class="fa-solid fa-chart-column text-emerald-600 mr-2"></i>
-                            <span id="dashboard-month-title">----年--月</span> 朝練参加状況マトリクス
+                        <h2 class="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-column text-emerald-600"></i>
+                            <span id="dashboard-month-title">----年--月</span> 朝練参加出欠マトリクス
                         </h2>
-                        <p class="text-xs text-slate-500">部員全員の提出状況・連絡事項の一覧</p>
+                        <p class="text-xs text-slate-500 mt-0.5">全部員のリアルタイム回答状況と日別参加人数の集計結果</p>
                     </div>
-                    <button onclick="exportToCSV()" class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow tap-btn">
+                    <button onclick="exportToCSV()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-sm tap-btn">
                         <i class="fa-solid fa-file-csv text-emerald-400 text-sm"></i>
                         <span>CSVダウンロード (BOM付)</span>
                     </button>
                 </div>
 
-                <!-- Stats summary badges -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-100">
-                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
-                        <span class="block text-xs text-slate-500">登録部員数</span>
-                        <span id="stat-total-students" class="text-lg font-bold text-slate-800">0名</span>
+                <!-- Statistics Summary Counter Badges -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-3 border-t border-slate-100">
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
+                        <span class="block text-[11px] font-semibold text-slate-500">登録部員数</span>
+                        <span id="stat-total-students" class="text-lg font-black text-slate-800">0名</span>
                     </div>
-                    <div class="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 text-center">
-                        <span class="block text-xs text-emerald-600">本日の参加予定 (〇)</span>
-                        <span id="stat-today-o" class="text-lg font-bold text-emerald-700">0名</span>
+                    <div class="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-center">
+                        <span class="block text-[11px] font-semibold text-emerald-700">本日の参加予定 (〇)</span>
+                        <span id="stat-today-o" class="text-lg font-black text-emerald-700">0名</span>
                     </div>
-                    <div class="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-center">
-                        <span class="block text-xs text-amber-600">本日の未定 (△)</span>
-                        <span id="stat-today-triangle" class="text-lg font-bold text-amber-700">0名</span>
+                    <div class="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-center">
+                        <span class="block text-[11px] font-semibold text-amber-700">本日の未定 (△)</span>
+                        <span id="stat-today-triangle" class="text-lg font-black text-amber-700">0名</span>
                     </div>
-                    <div class="bg-rose-50 p-2.5 rounded-lg border border-rose-200 text-center">
-                        <span class="block text-xs text-rose-600">直前緊急連絡ログ</span>
-                        <span id="stat-emergency-count" class="text-lg font-bold text-rose-700">0件</span>
+                    <div class="bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
+                        <span class="block text-[11px] font-semibold text-rose-700">直前緊急連絡ログ</span>
+                        <span id="stat-emergency-count" class="text-lg font-black text-rose-700">0件</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Main Aggregation Table -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <!-- Attendance Grid Matrix Table -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table id="matrix-table" class="w-full text-xs text-left border-collapse min-w-[600px]">
-                        <!-- Dynamic Header & Rows Injected Here -->
+                    <table id="matrix-table" class="w-full text-xs text-left border-collapse min-w-[650px]">
+                        <!-- Dynamic Header and Rows Injected Here -->
                     </table>
                 </div>
             </div>
 
-            <!-- Emergency Direct Contact Log List -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                <h3 class="font-bold text-sm text-slate-800 mb-3 flex items-center">
+            <!-- Emergency Direct Change Logs View -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                <h3 class="font-extrabold text-sm text-slate-800 mb-3 flex items-center">
                     <i class="fa-solid fa-triangle-exclamation text-rose-500 mr-2"></i>
-                    直前緊急連絡・変更履歴 (最新順)
+                    直前緊急連絡・理由変更履歴 (最新順)
                 </h3>
-                <div id="emergency-logs-container" class="space-y-2 max-h-60 overflow-y-auto text-xs">
+                <div id="emergency-logs-container" class="space-y-2 max-h-60 overflow-y-auto text-xs pr-1">
                     <p class="text-slate-400 text-center py-4">直前緊急連絡の記録はありません。</p>
                 </div>
             </div>
         </section>
 
-        <!-- SECTION 3: ADMIN VIEW (顧問用設定画面) -->
+        <!-- SECTION 3: ADVISOR VIEW (顧問用設定画面 - PIN Protected) -->
         <section id="view-admin" class="hidden space-y-4">
-            <!-- PIN Input Protection Overlay / Card -->
-            <div id="admin-pin-card" class="bg-white rounded-xl shadow-md border border-slate-200 p-6 max-w-md mx-auto my-8">
+            <!-- PIN Code Password Protection Card -->
+            <div id="admin-pin-card" class="bg-white rounded-2xl shadow-md border border-slate-200 p-6 max-w-md mx-auto my-8">
                 <div class="text-center mb-6">
-                    <div class="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto mb-2 text-xl">
+                    <div class="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-3 text-xl shadow-inner">
                         <i class="fa-solid fa-lock"></i>
                     </div>
-                    <h2 class="text-lg font-bold text-slate-800">顧問用設定画面 (PIN認証)</h2>
-                    <p class="text-xs text-slate-500 mt-1">管理設定を行うにはPINコードを入力してください</p>
+                    <h2 class="text-lg font-extrabold text-slate-800">顧問用設定画面 (PIN認証)</h2>
+                    <p class="text-xs text-slate-500 mt-1">管理設定を行うには暗証番号を入力してください</p>
                 </div>
 
                 <form onsubmit="handlePinSubmit(event)" class="space-y-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">暗証番号 (PIN)</label>
-                        <!-- SECURITY NOTE: Watermark/Placeholder deleted as requested -->
-                        <input type="password" id="admin-pin-input" placeholder="PINコードを入力" maxlength="8" required class="w-full text-center text-lg tracking-widest bg-slate-50 border border-slate-300 rounded-lg py-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <!-- SECURITY MASK: Password mask type, NO hint/watermark numbers in placeholder -->
+                        <input type="password" id="admin-pin-input" placeholder="PINコードを入力" maxlength="10" required class="w-full text-center text-lg tracking-widest bg-slate-50 border border-slate-300 rounded-xl py-3 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner">
                     </div>
                     <p id="pin-error-msg" class="text-xs text-rose-600 text-center hidden font-bold">PINコードが正しくありません</p>
-                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-sm transition tap-btn">
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm transition tap-btn shadow-sm">
                         認証して解除
                     </button>
                 </form>
             </div>
 
-            <!-- Protected Admin Panel Content (Unlocked after correct PIN) -->
+            <!-- Unlocked Advisor Panel Content -->
             <div id="admin-panel-content" class="hidden space-y-4">
-                <div class="flex justify-between items-center bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
-                    <span class="text-xs font-bold text-emerald-800"><i class="fa-solid fa-user-check mr-1"></i>顧問管理者としてログイン中</span>
-                    <button onclick="lockAdminPanel()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded font-bold tap-btn">
-                        ロックする
+                <div class="flex justify-between items-center bg-emerald-50 border border-emerald-200 p-3.5 rounded-2xl">
+                    <span class="text-xs font-bold text-emerald-900 flex items-center">
+                        <i class="fa-solid fa-user-check text-emerald-600 mr-2 text-sm"></i>顧問管理者として認証中
+                    </span>
+                    <button onclick="lockAdminPanel()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-bold tap-btn">
+                        パネルをロック
                     </button>
                 </div>
 
-                <!-- 1. Registered Students Management -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                    <h3 class="font-bold text-sm text-slate-800 mb-2 flex items-center">
-                        <i class="fa-solid fa-users text-emerald-600 mr-2"></i>登録部員一覧・削除管理
-                    </h3>
+                <!-- 1. Registered Student Member Management & Deletion -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-extrabold text-sm text-slate-800 flex items-center">
+                            <i class="fa-solid fa-users text-emerald-600 mr-2"></i>登録部員一覧・管理 (部員削除)
+                        </h3>
+                        <button onclick="promptRegisterStudent()" class="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1 rounded-lg font-bold tap-btn border border-emerald-200">
+                            + 部員を手動追加
+                        </button>
+                    </div>
                     <div id="admin-student-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-3">
-                        <!-- Dynamic Student Pills with Delete button -->
+                        <!-- Dynamic Student Pills with Delete icons -->
                     </div>
                 </div>
 
                 <!-- 2. Monthly Schedule Batch Configurations -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4">
-                    <h3 class="font-bold text-sm text-slate-800 flex items-center border-b border-slate-100 pb-2">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                    <h3 class="font-extrabold text-sm text-slate-800 flex items-center border-b border-slate-100 pb-2.5">
                         <i class="fa-solid fa-sliders text-emerald-600 mr-2"></i>
-                        <span id="admin-month-title">----年--月</span> の練習設定（一括変更）
+                        <span id="admin-month-title">----年--月</span> の一括練習設定
                     </h3>
 
-                    <!-- Batch Time Config -->
-                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                        <label class="block text-xs font-bold text-slate-700">一括時間設定 (全実施日に適用)</label>
-                        <div class="flex gap-2 items-center">
-                            <input type="time" id="batch-start-time" value="07:00" class="bg-white border border-slate-300 text-xs rounded px-2 py-1.5 focus:ring-emerald-500">
-                            <span class="text-xs text-slate-500">〜</span>
-                            <input type="time" id="batch-end-time" value="08:00" class="bg-white border border-slate-300 text-xs rounded px-2 py-1.5 focus:ring-emerald-500">
-                            <button onclick="applyBatchTimes()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold tap-btn">
-                                全日に適用
+                    <!-- Bulk Time Configuration -->
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+                        <label class="block text-xs font-bold text-slate-700">一括時間設定 (月内の全練習日に時間一括変更)</label>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <input type="time" id="batch-start-time" value="07:00" class="bg-white border border-slate-300 text-xs rounded-lg px-2.5 py-2 font-mono focus:ring-2 focus:ring-emerald-500">
+                            <span class="text-xs text-slate-500 font-bold">〜</span>
+                            <input type="time" id="batch-end-time" value="08:00" class="bg-white border border-slate-300 text-xs rounded-lg px-2.5 py-2 font-mono focus:ring-2 focus:ring-emerald-500">
+                            <button onclick="applyBatchTimes()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-2 rounded-lg font-bold tap-btn shadow-sm">
+                                全日に一括適用
                             </button>
                         </div>
                     </div>
 
-                    <!-- Batch Day OFF Toggle Config -->
-                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                        <label class="block text-xs font-bold text-slate-700">一括曜日OFF設定 (特定の曜日を一括オフ/練習休みに変更)</label>
+                    <!-- Bulk Day-of-Week OFF Configuration -->
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+                        <label class="block text-xs font-bold text-slate-700">曜日一括OFF機能 (特定曜日をまとめて休練に設定)</label>
                         <div class="flex flex-wrap gap-2 text-xs">
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer">
-                                <input type="checkbox" value="1" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">月</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="1" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">月</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer">
-                                <input type="checkbox" value="2" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">火</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="2" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">火</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer">
-                                <input type="checkbox" value="3" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">水</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="3" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">水</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer">
-                                <input type="checkbox" value="4" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">木</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="4" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">木</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer">
-                                <input type="checkbox" value="5" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">金</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="5" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">金</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 text-blue-600 cursor-pointer">
-                                <input type="checkbox" value="6" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">土</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-blue-600 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="6" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">土</span>
                             </label>
-                            <label class="inline-flex items-center bg-white px-2.5 py-1.5 rounded border border-slate-300 text-rose-600 cursor-pointer">
-                                <input type="checkbox" value="0" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1 font-bold">日</span>
+                            <label class="inline-flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-rose-600 cursor-pointer hover:bg-slate-100">
+                                <input type="checkbox" value="0" class="batch-day-off-chk rounded text-emerald-600"> <span class="ml-1.5 font-bold">日</span>
                             </label>
-                            <button onclick="applyBatchDayOff()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded font-bold ml-auto tap-btn">
+                            <button onclick="applyBatchDayOff()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3.5 py-2 rounded-lg font-bold ml-auto tap-btn shadow-sm">
                                 選択曜日をOFFにする
                             </button>
                         </div>
@@ -292,41 +317,76 @@
 
                     <!-- Individual Day Practice Settings Table -->
                     <div class="space-y-2">
-                        <label class="block text-xs font-bold text-slate-700">各日の個別設定 (場所・時間・ON/OFF)</label>
+                        <label class="block text-xs font-bold text-slate-700">各日の個別詳細設定 (場所・時間・ON/OFF)</label>
                         <div id="admin-days-config-list" class="space-y-2 max-h-96 overflow-y-auto pr-1">
                             <!-- Dynamic Day Config Rows -->
                         </div>
                     </div>
                 </div>
 
-                <!-- 3. Direct Email Notification Settings (EmailJS) -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-                    <h3 class="font-bold text-sm text-slate-800 flex items-center">
-                        <i class="fa-solid fa-envelope-circle-check text-emerald-600 mr-2"></i>
-                        緊急連絡用 メールダイレクト送信連携設定 (EmailJS)
+                <!-- 3. Realtime Firebase Cloud Sync Setup Card -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+                    <h3 class="font-extrabold text-sm text-slate-800 flex items-center">
+                        <i class="fa-solid fa-cloud text-emerald-600 mr-2"></i>
+                        クラウドリアルタイム同期 (Firebase Realtime Database) 設定
                     </h3>
-                    <p class="text-xs text-slate-500">部員が直前緊急変更を送信した際に顧問宛てにダイレクト送信するための設定です。(未設定の場合はブラウザローカル保存)</p>
-                    
+                    <p class="text-xs text-slate-500">
+                        生徒の端末と顧問の端末間でデータを双方向でリアルタイム連動させるには、Firebaseの接続情報を登録します。(未設定時はブラウザ単体で動作します)
+                    </p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div class="sm:col-span-2">
+                            <label class="block font-bold text-slate-600 mb-1">Firebase Database URL (`databaseURL`)</label>
+                            <input type="text" id="fb-database-url" placeholder="https://your-app-rtdb.firebaseio.com" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-mono">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-600 mb-1">API Key (`apiKey`)</label>
+                            <input type="text" id="fb-api-key" placeholder="AIzaSy..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-mono">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-600 mb-1">Project ID (`projectId`)</label>
+                            <input type="text" id="fb-project-id" placeholder="your-project-id" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-mono">
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 pt-1">
+                        <button onclick="saveFirebaseConfig()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 rounded-xl font-bold tap-btn shadow-sm">
+                            クラウド同期設定を有効化
+                        </button>
+                        <button onclick="clearFirebaseConfig()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs px-3 py-2 rounded-xl font-bold tap-btn">
+                            設定解除
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4. Direct Background Email Notification Settings (EmailJS) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+                    <h3 class="font-extrabold text-sm text-slate-800 flex items-center">
+                        <i class="fa-solid fa-envelope-circle-check text-emerald-600 mr-2"></i>
+                        緊急連絡用 メールダイレクト自動送信設定 (EmailJS)
+                    </h3>
+                    <p class="text-xs text-slate-500">部員が直前緊急連絡を送信した際に顧問宛てへバックグラウンドメール通知を行う場合の設定です。</p>
+
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                         <div>
                             <label class="block font-bold text-slate-600 mb-1">顧問通知先メールアドレス</label>
-                            <input type="email" id="emailjs-advisor-mail" placeholder="advisor@example.com" class="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5">
+                            <input type="email" id="emailjs-advisor-mail" placeholder="advisor@example.com" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
                         </div>
                         <div>
                             <label class="block font-bold text-slate-600 mb-1">EmailJS Public Key</label>
-                            <input type="text" id="emailjs-public-key" placeholder="Public Key" class="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5">
+                            <input type="text" id="emailjs-public-key" placeholder="Public Key" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
                         </div>
                         <div>
                             <label class="block font-bold text-slate-600 mb-1">EmailJS Service ID</label>
-                            <input type="text" id="emailjs-service-id" placeholder="service_xxx" class="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5">
+                            <input type="text" id="emailjs-service-id" placeholder="service_xxx" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
                         </div>
                         <div>
                             <label class="block font-bold text-slate-600 mb-1">EmailJS Template ID</label>
-                            <input type="text" id="emailjs-template-id" placeholder="template_xxx" class="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5">
+                            <input type="text" id="emailjs-template-id" placeholder="template_xxx" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
                         </div>
                     </div>
-                    <button onclick="saveEmailConfig()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs px-4 py-2 rounded-lg font-bold tap-btn">
-                        メール設定を保存
+                    <button onclick="saveEmailConfig()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl font-bold tap-btn shadow-sm">
+                        メール送信設定を保存
                     </button>
                 </div>
             </div>
@@ -334,21 +394,21 @@
     </main>
 
     <!-- Emergency Contact Modal Box -->
-    <div id="emergency-modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-red-200 animate-in fade-in zoom-in duration-200">
+    <div id="emergency-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-red-200">
             <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
-                <h3 class="font-bold text-red-600 flex items-center text-base">
-                    <i class="fa-solid fa-bell mr-2"></i>直前緊急 連絡送信
+                <h3 class="font-extrabold text-red-600 flex items-center text-base">
+                    <i class="fa-solid fa-bell mr-2"></i>直前緊急 予定変更・連絡送信
                 </h3>
                 <button onclick="closeEmergencyModal()" class="text-slate-400 hover:text-slate-600 text-lg">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
-            <form onsubmit="handleEmergencySubmit(event)" class="space-y-3 text-xs">
+            <form onsubmit="handleEmergencySubmit(event)" class="space-y-3.5 text-xs">
                 <div>
                     <label class="block font-bold text-slate-700 mb-1">部員名 <span class="text-red-500">*</span></label>
-                    <select id="emg-student-name" required class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-bold">
+                    <select id="emg-student-name" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-800">
                         <!-- Populated via JS -->
                     </select>
                 </div>
@@ -356,11 +416,11 @@
                 <div>
                     <label class="block font-bold text-slate-700 mb-1">変更後の状況 <span class="text-red-500">*</span></label>
                     <div class="grid grid-cols-2 gap-2">
-                        <label class="flex items-center space-x-2 border p-2 rounded-lg cursor-pointer hover:bg-slate-50">
-                            <input type="radio" name="emg-status" value="X" checked class="text-red-600 focus:ring-red-500">
+                        <label class="flex items-center space-x-2 border p-2.5 rounded-xl cursor-pointer hover:bg-rose-50/50">
+                            <input type="radio" name="emg-status" value="X" checked class="text-rose-600 focus:ring-rose-500">
                             <span class="font-bold text-rose-600">✕ 急遽不参加</span>
                         </label>
-                        <label class="flex items-center space-x-2 border p-2 rounded-lg cursor-pointer hover:bg-slate-50">
+                        <label class="flex items-center space-x-2 border p-2.5 rounded-xl cursor-pointer hover:bg-amber-50/50">
                             <input type="radio" name="emg-status" value="TRIANGLE" class="text-amber-600 focus:ring-amber-500">
                             <span class="font-bold text-amber-600">△ 遅れて参加/未定</span>
                         </label>
@@ -368,15 +428,15 @@
                 </div>
 
                 <div>
-                    <label class="block font-bold text-slate-700 mb-1">緊急連絡理由 (体調不良、ケガ、公共交通等) <span class="text-red-500">*</span></label>
-                    <textarea id="emg-reason" required rows="3" placeholder="例: 今朝発熱が37.8度あるため不参加とさせてください。" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-red-500"></textarea>
+                    <label class="block font-bold text-slate-700 mb-1">緊急連絡・変更理由 (発熱・怪我等) <span class="text-red-500">*</span></label>
+                    <textarea id="emg-reason" required rows="3" placeholder="例: 今朝発熱が37.8度あり身体のだるさがあるため、本日の朝練は不参加とさせてください。" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 focus:ring-2 focus:ring-rose-500"></textarea>
                 </div>
 
                 <div class="pt-2 flex gap-2">
-                    <button type="button" onclick="closeEmergencyModal()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 rounded-lg tap-btn">
+                    <button type="button" onclick="closeEmergencyModal()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl tap-btn">
                         キャンセル
                     </button>
-                    <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg shadow tap-btn flex items-center justify-center space-x-1">
+                    <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-md tap-btn flex items-center justify-center space-x-1">
                         <i class="fa-solid fa-paper-plane mr-1"></i>
                         <span>送信する</span>
                     </button>
@@ -386,7 +446,7 @@
     </div>
 
     <script>
-        // Data Structures & Application State
+        // System Constants
         const CONSTANTS = {
             PIN: "2692",
             DEFAULT_LOCATION: "グラウンド",
@@ -394,47 +454,51 @@
             DEFAULT_END_TIME: "08:00"
         };
 
-        // App State
+        // Application State
         let appState = {
-            currentMonth: "", // e.g., "2026-10"
-            students: [],     // Array of student names
-            monthConfigs: {}, // { "2026-10": { days: [{day: 1, location, startTime, endTime, isOff}] } }
+            currentMonth: "", // e.g. "2026-10"
+            students: [],     // Array of student name strings
+            monthConfigs: {}, // { "2026-10": { days: [...] } }
             answers: {},      // { "2026-10": { "部員名": { "1": { status: 'O'|'TRIANGLE'|'X', comment: '' } } } }
-            emergencyLogs: [],// [{ timestamp, studentName, status, reason, month }]
+            emergencyLogs: [],
             emailConfig: { advisorEmail: '', publicKey: '', serviceId: '', templateId: '' },
+            firebaseConfig: { databaseURL: '', apiKey: '', projectId: '' },
             isAdminUnlocked: false,
             currentActiveStudent: ""
         };
 
-        // Initialize Application on Window Load
+        let dbRef = null;
+        let isFirebaseConnected = false;
+
+        // Window Onload Initialization
         window.onload = function() {
             loadAppStateFromStorage();
 
-            // Set current month if empty
+            // Set current active month default
             if (!appState.currentMonth) {
                 const now = new Date();
                 appState.currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
             }
 
-            // Ensure month configuration exists for current month
             ensureMonthConfig(appState.currentMonth);
-
-            // Populate Global Month Selectors
             updateMonthSelectors();
+
+            // Initialize Firebase if configured
+            initFirebase();
 
             // Check Emergency Window
             checkEmergencyWindow();
 
-            // Render Views
+            // Initial Renders
             renderStudentView();
             renderDashboardView();
             renderAdminView();
         };
 
-        // Local Storage Utilities
+        // Storage Utilities
         function loadAppStateFromStorage() {
             try {
-                const saved = localStorage.getItem('soccer_club_app_state');
+                const saved = localStorage.getItem('soccer_club_app_state_v2');
                 if (saved) {
                     const parsed = JSON.parse(saved);
                     appState = { ...appState, ...parsed };
@@ -446,13 +510,67 @@
 
         function saveAppState() {
             try {
-                localStorage.setItem('soccer_club_app_state', JSON.stringify(appState));
+                localStorage.setItem('soccer_club_app_state_v2', JSON.stringify(appState));
+                syncToFirebase();
             } catch (e) {
                 console.error("Storage save error:", e);
             }
         }
 
-        // Helper: Ensure Days data for given YYYY-MM
+        // Realtime Firebase Integration
+        function initFirebase() {
+            const cfg = appState.firebaseConfig;
+            if (cfg && cfg.databaseURL && cfg.apiKey) {
+                try {
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp({
+                            apiKey: cfg.apiKey,
+                            databaseURL: cfg.databaseURL,
+                            projectId: cfg.projectId || "soccer-club-app"
+                        });
+                    }
+                    dbRef = firebase.database().ref('soccer_club_data');
+                    isFirebaseConnected = true;
+
+                    // Listen for real-time cloud changes
+                    dbRef.on('value', (snapshot) => {
+                        const val = snapshot.val();
+                        if (val) {
+                            appState.students = val.students || appState.students;
+                            appState.monthConfigs = val.monthConfigs || appState.monthConfigs;
+                            appState.answers = val.answers || appState.answers;
+                            appState.emergencyLogs = val.emergencyLogs || appState.emergencyLogs;
+
+                            updateMonthSelectors();
+                            renderStudentView();
+                            renderDashboardView();
+                            renderAdminView();
+                        }
+                    });
+
+                    document.getElementById('sync-status-badge').className = "text-[10px] bg-emerald-900/80 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/50 flex items-center gap-1 font-normal";
+                    document.getElementById('sync-status-badge').children[0].className = "w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping";
+                    document.getElementById('sync-status-text').textContent = "クラウド同期中";
+                } catch (err) {
+                    console.error("Firebase init failed:", err);
+                    isFirebaseConnected = false;
+                    document.getElementById('sync-status-text').textContent = "ローカル動作中";
+                }
+            }
+        }
+
+        function syncToFirebase() {
+            if (isFirebaseConnected && dbRef) {
+                dbRef.set({
+                    students: appState.students,
+                    monthConfigs: appState.monthConfigs,
+                    answers: appState.answers,
+                    emergencyLogs: appState.emergencyLogs
+                }).catch(err => console.error("Firebase sync write error:", err));
+            }
+        }
+
+        // Helper: Ensure Month Config exists
         function ensureMonthConfig(monthStr) {
             if (!appState.monthConfigs[monthStr]) {
                 const [year, month] = monthStr.split('-').map(Number);
@@ -474,9 +592,7 @@
         }
 
         function switchTab(tabName) {
-            // Update Tab Button Styles
-            const tabs = ['student', 'dashboard', 'admin'];
-            tabs.forEach(t => {
+            ['student', 'dashboard', 'admin'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (t === tabName) {
@@ -490,18 +606,14 @@
                 }
             });
 
-            if (tabName === 'dashboard') {
-                renderDashboardView();
-            } else if (tabName === 'admin') {
-                renderAdminView();
-            }
+            if (tabName === 'dashboard') renderDashboardView();
+            else if (tabName === 'admin') renderAdminView();
         }
 
         function updateMonthSelectors() {
             const select = document.getElementById('global-month-select');
             select.innerHTML = '';
 
-            // Generate current month and upcoming months
             const existingMonths = Object.keys(appState.monthConfigs);
             if (!existingMonths.includes(appState.currentMonth)) {
                 existingMonths.push(appState.currentMonth);
@@ -517,7 +629,6 @@
                 select.appendChild(opt);
             });
 
-            // Update text displays
             const [y, mm] = appState.currentMonth.split('-');
             document.getElementById('student-view-month').textContent = `${y}年${mm}月`;
             document.getElementById('dashboard-month-title').textContent = `${y}年${mm}月`;
@@ -532,7 +643,7 @@
             renderStudentView();
             renderDashboardView();
             renderAdminView();
-            showToast(`対象月を ${newMonth} に切替えました`);
+            showToast(`対象月を ${newMonth} に変更しました`);
         }
 
         function promptAddNewMonth() {
@@ -545,7 +656,7 @@
                 renderStudentView();
                 showToast(`${val} を追加しました`);
             } else if (val) {
-                alert("YYYY-MMの形式で入力してください (例: 2026-11)");
+                alert("YYYY-MM の形式で指定してください (例: 2026-11)");
             }
         }
 
@@ -559,9 +670,9 @@
                     saveAppState();
                     renderStudentView();
                     renderAdminView();
-                    showToast(`部員「${trimmed}」を新規登録しました`);
+                    showToast(`部員「${trimmed}」を登録しました`);
                 } else {
-                    alert("すでに登録されている名前です");
+                    alert("既に登録されている氏名です");
                 }
             }
         }
@@ -573,7 +684,6 @@
         }
 
         function renderStudentView() {
-            // Update Student Select Options
             const sel = document.getElementById('student-name-select');
             const emgSel = document.getElementById('emg-student-name');
             sel.innerHTML = '<option value="">-- 名前を選択してください --</option>';
@@ -610,31 +720,30 @@
 
             config.days.forEach(dayObj => {
                 const dateObj = new Date(year, month - 1, dayObj.day);
-                const dayOfWeekNum = dateObj.getDay(); // 0=日, 1=月...
+                const dayOfWeekNum = dateObj.getDay();
                 const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
                 const dayStr = dayNames[dayOfWeekNum];
 
-                // Badge styling according to day of week
                 let dayColorClass = 'text-slate-700 bg-slate-100';
                 if (dayOfWeekNum === 0) dayColorClass = 'text-red-600 bg-red-50 border-red-200';
                 else if (dayOfWeekNum === 6) dayColorClass = 'text-blue-600 bg-blue-50 border-blue-200';
 
                 const card = document.createElement('div');
-                card.className = `bg-white rounded-xl shadow-sm border p-3.5 transition ${dayObj.isOff ? 'opacity-60 bg-slate-50' : 'border-slate-200'}`;
+                card.className = `bg-white rounded-2xl shadow-sm border p-3.5 transition ${dayObj.isOff ? 'opacity-60 bg-slate-50' : 'border-slate-200'}`;
 
                 const curAnswer = existingAnswers[dayObj.day] || { status: '', comment: '' };
 
                 card.innerHTML = `
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                         <div class="flex items-center space-x-2">
-                            <span class="text-base font-black px-2.5 py-1 rounded-lg border text-center min-w-[55px] ${dayColorClass}">
+                            <span class="text-sm font-black px-2.5 py-1 rounded-xl border text-center min-w-[60px] ${dayColorClass}">
                                 ${month}/${dayObj.day} <span class="text-xs font-normal">(${dayStr})</span>
                             </span>
                             ${dayObj.isOff ? 
-                                `<span class="bg-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded font-bold">OFF (練習休み)</span>` : 
+                                `<span class="bg-slate-200 text-slate-600 text-xs px-2.5 py-1 rounded-lg font-extrabold">練習OFF (休み)</span>` : 
                                 `<div class="text-xs text-slate-500">
-                                    <span class="font-semibold text-slate-700"><i class="fa-solid fa-location-dot text-emerald-600 mr-1"></i>${dayObj.location}</span> | 
-                                    <span>${dayObj.startTime}〜${dayObj.endTime}</span>
+                                    <span class="font-bold text-slate-700 mr-2"><i class="fa-solid fa-location-dot text-emerald-600 mr-1"></i>${dayObj.location}</span>
+                                    <span><i class="fa-regular fa-clock mr-1"></i>${dayObj.startTime}〜${dayObj.endTime}</span>
                                 </div>`
                             }
                         </div>
@@ -642,15 +751,14 @@
                 `;
 
                 if (!dayObj.isOff) {
-                    // Tap Pills / Large Card-like Buttons for 〇 △ ✕
                     const statusKey = `day-status-${dayObj.day}`;
                     const commentKey = `day-comment-${dayObj.day}`;
 
                     const flexOptions = document.createElement('div');
-                    flexOptions.className = "grid grid-cols-3 gap-2 mt-2";
+                    flexOptions.className = "grid grid-cols-3 gap-2 mt-2.5";
 
                     const options = [
-                        { val: 'O', label: '〇 参加予定', color: 'peer-checked:bg-emerald-600 peer-checked:text-white border-emerald-300 text-emerald-700 bg-emerald-50/50' },
+                        { val: 'O', label: '〇 参加', color: 'peer-checked:bg-emerald-600 peer-checked:text-white border-emerald-300 text-emerald-700 bg-emerald-50/50' },
                         { val: 'TRIANGLE', label: '△ 未定', color: 'peer-checked:bg-amber-500 peer-checked:text-white border-amber-300 text-amber-700 bg-amber-50/50' },
                         { val: 'X', label: '✕ 不参加', color: 'peer-checked:bg-rose-600 peer-checked:text-white border-rose-300 text-rose-700 bg-rose-50/50' }
                     ];
@@ -660,7 +768,7 @@
                         const optHtml = `
                             <label class="cursor-pointer">
                                 <input type="radio" name="${statusKey}" value="${opt.val}" ${isChecked} class="peer hidden">
-                                <div class="text-center py-2.5 px-1 rounded-xl border text-xs sm:text-sm font-bold shadow-sm tap-btn transition-all ${opt.color}">
+                                <div class="text-center py-2.5 px-1 rounded-xl border text-xs sm:text-sm font-extrabold shadow-sm tap-btn transition-all ${opt.color}">
                                     ${opt.label}
                                 </div>
                             </label>
@@ -670,11 +778,10 @@
 
                     card.appendChild(flexOptions);
 
-                    // Optional Comment Input
                     const commentDiv = document.createElement('div');
                     commentDiv.className = "mt-2";
                     commentDiv.innerHTML = `
-                        <input type="text" id="${commentKey}" value="${curAnswer.comment || ''}" placeholder="連絡事項・不参加の理由等 (任意)" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                        <input type="text" id="${commentKey}" value="${curAnswer.comment || ''}" placeholder="連絡事項・不参加の理由等 (任意)" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                     `;
                     card.appendChild(commentDiv);
                 }
@@ -699,7 +806,7 @@
                 if (!radios || radios.length === 0) return;
 
                 const dateObj = new Date(year, month - 1, dayObj.day);
-                const dayNum = dateObj.getDay(); // 0=Sun, 6=Sat
+                const dayNum = dateObj.getDay();
 
                 let targetVal = '';
                 if (type === 'O') targetVal = 'O';
@@ -719,19 +826,15 @@
         function saveStudentSchedule() {
             const studentName = appState.currentActiveStudent;
             if (!studentName) {
-                alert("部員名を選択してから提出してください");
+                alert("部員名を選択してから送信してください");
                 return;
             }
 
             const activeMonth = appState.currentMonth;
             const config = appState.monthConfigs[activeMonth];
 
-            if (!appState.answers[activeMonth]) {
-                appState.answers[activeMonth] = {};
-            }
-            if (!appState.answers[activeMonth][studentName]) {
-                appState.answers[activeMonth][studentName] = {};
-            }
+            if (!appState.answers[activeMonth]) appState.answers[activeMonth] = {};
+            if (!appState.answers[activeMonth][studentName]) appState.answers[activeMonth][studentName] = {};
 
             config.days.forEach(dayObj => {
                 if (!dayObj.isOff) {
@@ -756,8 +859,7 @@
         function checkEmergencyWindow() {
             const now = new Date();
             const hour = now.getHours();
-            
-            // Urgent Window: 20:00 (night before) ~ 07:00 (morning of practice)
+            // 20:00 - 07:00 window active
             const isUrgentTime = (hour >= 20 || hour < 7);
             const banner = document.getElementById('emergency-banner');
 
@@ -769,7 +871,7 @@
         }
 
         function openEmergencyModal() {
-            renderStudentView(); // populate options
+            renderStudentView();
             document.getElementById('emergency-modal').classList.remove('hidden');
         }
 
@@ -799,7 +901,7 @@
             appState.emergencyLogs.unshift(logItem);
             saveAppState();
 
-            // Try EmailJS dispatch if config exists
+            // Background EmailJS Trigger
             const emailCfg = appState.emailConfig;
             if (emailCfg.advisorEmail && emailCfg.publicKey && emailCfg.serviceId && emailCfg.templateId) {
                 try {
@@ -810,18 +912,14 @@
                         status: logItem.status,
                         reason: reason,
                         date_time: logItem.timestamp
-                    }).then(() => {
-                        console.log("EmailJS Sent Successfully");
-                    }).catch(err => {
-                        console.error("EmailJS Error:", err);
-                    });
+                    }).then(() => console.log("EmailJS Auto Direct Triggered")).catch(err => console.error("EmailJS Error:", err));
                 } catch (err) {
                     console.error("EmailJS Exec Error:", err);
                 }
             }
 
             closeEmergencyModal();
-            showToast("緊急連絡を送信・保存しました");
+            showToast("緊急連絡を保存・送信しました");
             renderDashboardView();
         }
 
@@ -834,11 +932,10 @@
             const [year, month] = activeMonth.split('-').map(Number);
             const answers = appState.answers[activeMonth] || {};
 
-            // 1. Build Header Row
             let headerHtml = `
                 <thead>
                     <tr class="bg-slate-800 text-white font-bold sticky top-0 z-10">
-                        <th class="p-2.5 text-left border-b border-slate-700 min-w-[100px] sticky left-0 bg-slate-800">部員名</th>
+                        <th class="p-2.5 text-left border-b border-slate-700 min-w-[110px] sticky left-0 bg-slate-800">部員名</th>
             `;
 
             config.days.forEach(d => {
@@ -856,12 +953,11 @@
             });
             headerHtml += `</tr></thead>`;
 
-            // 2. Build Student Rows
             let bodyHtml = '<tbody>';
             const students = appState.students;
 
             if (students.length === 0) {
-                bodyHtml += `<tr><td colspan="${config.days.length + 1}" class="p-6 text-center text-slate-400">部員が登録されていません。「部員用入力」または「顧問用設定」から追加してください。</td></tr>`;
+                bodyHtml += `<tr><td colspan="${config.days.length + 1}" class="p-6 text-center text-slate-400">登録部員がいません。「顧問用設定」から部員を追加してください。</td></tr>`;
             } else {
                 students.forEach((st, idx) => {
                     const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50';
@@ -890,10 +986,8 @@
             bodyHtml += '</tbody>';
             table.innerHTML = headerHtml + bodyHtml;
 
-            // Update Statistics Summary Header Badges
             document.getElementById('stat-total-students').textContent = `${students.length}名`;
             
-            // Calculate Today Stats
             const todayDate = new Date();
             const todayDay = todayDate.getDate();
             let todayO = 0;
@@ -909,7 +1003,6 @@
             document.getElementById('stat-today-o').textContent = `${todayO}名`;
             document.getElementById('stat-today-triangle').textContent = `${todayTri}名`;
 
-            // Render Emergency Logs
             renderEmergencyLogs();
         }
 
@@ -927,12 +1020,12 @@
 
             logs.forEach(log => {
                 const div = document.createElement('div');
-                div.className = "bg-rose-50/80 border border-rose-200 rounded-lg p-2.5 flex justify-between items-start gap-2";
+                div.className = "bg-rose-50/80 border border-rose-200 rounded-xl p-2.5 flex justify-between items-start gap-2";
                 div.innerHTML = `
                     <div>
                         <div class="flex items-center space-x-2">
                             <span class="font-bold text-slate-800">${log.studentName}</span>
-                            <span class="text-xs px-2 py-0.5 rounded font-bold ${log.status.includes('不参加') ? 'bg-rose-200 text-rose-800' : 'bg-amber-200 text-amber-800'}">${log.status}</span>
+                            <span class="text-xs px-2 py-0.5 rounded font-extrabold ${log.status.includes('不参加') ? 'bg-rose-200 text-rose-800' : 'bg-amber-200 text-amber-800'}">${log.status}</span>
                             <span class="text-[10px] text-slate-400">${log.timestamp}</span>
                         </div>
                         <p class="text-xs text-slate-700 mt-1 font-medium">${log.reason}</p>
@@ -951,9 +1044,7 @@
             const students = appState.students;
 
             let csvContent = `部員名`;
-            config.days.forEach(d => {
-                csvContent += `,${d.day}日`;
-            });
+            config.days.forEach(d => { csvContent += `,${d.day}日`; });
             csvContent += `\n`;
 
             students.forEach(st => {
@@ -974,16 +1065,15 @@
                 csvContent += `\n`;
             });
 
-            // BOM for UTF-8 Excel compatibility
             const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
             const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `朝練参加回答_${activeMonth}.csv`;
+            a.download = `朝練回答集計_${activeMonth}.csv`;
             a.click();
             URL.revokeObjectURL(url);
-            showToast("CSVファイルのダウンロードを開始しました");
+            showToast("CSVの出力が完了しました");
         }
 
         function handlePinSubmit(e) {
@@ -996,7 +1086,7 @@
                 errorMsg.classList.add('hidden');
                 document.getElementById('admin-pin-input').value = '';
                 renderAdminView();
-                showToast("顧問管理者認証を完了しました");
+                showToast("顧問管理者として認証完了しました");
             } else {
                 errorMsg.classList.remove('hidden');
             }
@@ -1021,20 +1111,20 @@
             pinCard.classList.add('hidden');
             panel.classList.remove('hidden');
 
-            // 1. Render Admin Student Pills with Delete
+            // 1. Render Registered Students with Delete button
             const stContainer = document.getElementById('admin-student-list');
             stContainer.innerHTML = '';
 
             if (appState.students.length === 0) {
-                stContainer.innerHTML = '<p class="text-xs text-slate-400 col-span-full">登録済みの部員はいません</p>';
+                stContainer.innerHTML = '<p class="text-xs text-slate-400 col-span-full py-2">登録されている部員はいません</p>';
             } else {
                 appState.students.forEach(st => {
                     const pill = document.createElement('div');
-                    pill.className = "bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-between";
+                    pill.className = "bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between";
                     pill.innerHTML = `
                         <span class="font-bold text-xs text-slate-800">${st}</span>
-                        <button onclick="deleteStudent('${st}')" class="text-rose-600 hover:text-rose-800 text-xs px-1.5 py-0.5 rounded hover:bg-rose-50" title="部員削除">
-                            <i class="fa-solid fa-trash-can"></i>
+                        <button onclick="deleteStudent('${st}')" class="text-rose-600 hover:text-rose-800 text-xs px-2 py-1 rounded-lg hover:bg-rose-50 tap-btn" title="部員削除">
+                            <i class="fa-solid fa-trash-can"></i> 削除
                         </button>
                     `;
                     stContainer.appendChild(pill);
@@ -1056,7 +1146,7 @@
                     const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
 
                     const row = document.createElement('div');
-                    row.className = `p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${d.isOff ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`;
+                    row.className = `p-2.5 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${d.isOff ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`;
 
                     row.innerHTML = `
                         <div class="font-bold w-16">
@@ -1066,22 +1156,27 @@
                         <div class="flex items-center space-x-2">
                             <label class="flex items-center space-x-1 cursor-pointer">
                                 <input type="checkbox" onchange="toggleDayOff('${activeMonth}', ${d.day}, this.checked)" ${d.isOff ? 'checked' : ''} class="rounded text-rose-600">
-                                <span class="font-bold ${d.isOff ? 'text-rose-600' : 'text-slate-600'}">練習OFF</span>
+                                <span class="font-bold ${d.isOff ? 'text-rose-600' : 'text-slate-600'}">休練(OFF)</span>
                             </label>
                         </div>
 
                         <div class="flex items-center space-x-2 ${d.isOff ? 'pointer-events-none opacity-40' : ''}">
-                            <input type="text" value="${d.location}" onchange="updateDayLocation('${activeMonth}', ${d.day}, this.value)" placeholder="場所" class="w-24 bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs">
-                            <input type="time" value="${d.startTime}" onchange="updateDayTime('${activeMonth}', ${d.day}, 'startTime', this.value)" class="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs">
+                            <input type="text" value="${d.location}" onchange="updateDayLocation('${activeMonth}', ${d.day}, this.value)" placeholder="場所" class="w-24 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-semibold">
+                            <input type="time" value="${d.startTime}" onchange="updateDayTime('${activeMonth}', ${d.day}, 'startTime', this.value)" class="bg-slate-50 border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-mono">
                             <span>〜</span>
-                            <input type="time" value="${d.endTime}" onchange="updateDayTime('${activeMonth}', ${d.day}, 'endTime', this.value)" class="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs">
+                            <input type="time" value="${d.endTime}" onchange="updateDayTime('${activeMonth}', ${d.day}, 'endTime', this.value)" class="bg-slate-50 border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-mono">
                         </div>
                     `;
                     daysContainer.appendChild(row);
                 });
             }
 
-            // 3. Load Email JS Config Inputs
+            // 3. Load Firebase Config Fields
+            document.getElementById('fb-database-url').value = appState.firebaseConfig.databaseURL || '';
+            document.getElementById('fb-api-key').value = appState.firebaseConfig.apiKey || '';
+            document.getElementById('fb-project-id').value = appState.firebaseConfig.projectId || '';
+
+            // 4. Load Email JS Config Inputs
             document.getElementById('emailjs-advisor-mail').value = appState.emailConfig.advisorEmail || '';
             document.getElementById('emailjs-public-key').value = appState.emailConfig.publicKey || '';
             document.getElementById('emailjs-service-id').value = appState.emailConfig.serviceId || '';
@@ -1089,7 +1184,7 @@
         }
 
         function deleteStudent(stName) {
-            if (confirm(`部員「${stName}」を削除してもよろしいですか？`)) {
+            if (confirm(`部員「${stName}」を削除しますか？`)) {
                 appState.students = appState.students.filter(s => s !== stName);
                 if (appState.currentActiveStudent === stName) {
                     appState.currentActiveStudent = '';
@@ -1142,7 +1237,7 @@
             saveAppState();
             renderAdminView();
             renderStudentView();
-            showToast("全日に練習時間を一括設定しました");
+            showToast("時間を一括変更しました");
         }
 
         function applyBatchDayOff() {
@@ -1150,7 +1245,7 @@
             const selectedDayNums = Array.from(checkboxes).map(cb => Number(cb.value));
 
             if (selectedDayNums.length === 0) {
-                alert("一括OFFにしたい曜日を選択してください");
+                alert("一括OFFに設定する曜日を選択してください");
                 return;
             }
 
@@ -1169,7 +1264,29 @@
             renderAdminView();
             renderStudentView();
             renderDashboardView();
-            showToast("選択された曜日を一括OFFに設定しました");
+            showToast("選択曜日を一括OFFに設定しました");
+        }
+
+        function saveFirebaseConfig() {
+            appState.firebaseConfig = {
+                databaseURL: document.getElementById('fb-database-url').value.trim(),
+                apiKey: document.getElementById('fb-api-key').value.trim(),
+                projectId: document.getElementById('fb-project-id').value.trim()
+            };
+            saveAppState();
+            initFirebase();
+            showToast("クラウド同期設定を保存しました");
+        }
+
+        function clearFirebaseConfig() {
+            appState.firebaseConfig = { databaseURL: '', apiKey: '', projectId: '' };
+            isFirebaseConnected = false;
+            saveAppState();
+            document.getElementById('sync-status-badge').className = "text-[10px] bg-emerald-900/80 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/50 flex items-center gap-1 font-normal";
+            document.getElementById('sync-status-badge').children[0].className = "w-1.5 h-1.5 rounded-full bg-slate-400 inline-block";
+            document.getElementById('sync-status-text').textContent = "ローカル動作中";
+            renderAdminView();
+            showToast("クラウド同期を解除しました");
         }
 
         function saveEmailConfig() {
@@ -1180,18 +1297,15 @@
                 templateId: document.getElementById('emailjs-template-id').value.trim()
             };
             saveAppState();
-            showToast("メール設定を保存しました");
+            showToast("メール送信設定を保存しました");
         }
 
-        // Toast Helper
         function showToast(text) {
             const toast = document.getElementById('toast-message');
             const toastText = document.getElementById('toast-text');
             toastText.textContent = text;
             toast.classList.remove('hidden');
-            setTimeout(() => {
-                toast.classList.add('hidden');
-            }, 2500);
+            setTimeout(() => { toast.classList.add('hidden'); }, 2500);
         }
     </script>
 </body>

@@ -1,1036 +1,935 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>サッカー部 朝練出欠管理システム</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Noto Sans JP', 'Inter', sans-serif; background-color: #f8fafc; }
-        .touch-action-manipulation { touch-action: manipulation; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    </style>
-
-    <!-- Firebase Compat SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <!-- EmailJS SDK -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サッカー部 朝練（自主練）出欠リアルタイム管理</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Firebase SDKs (v9 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+  <style>
+    body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .tab-btn.active { border-bottom: 3px solid #16a34a; color: #16a34a; font-weight: bold; background-color: #ffffff; }
+    .status-btn-input:checked + .status-btn-label {
+      transform: scale(1.02);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      border-width: 2px;
+    }
+    .status-btn-input:checked + .status-btn-label.maru { background-color: #dcfce7; border-color: #16a34a; color: #15803d; }
+    .status-btn-input:checked + .status-btn-label.sankaku { background-color: #fef9c3; border-color: #ca8a04; color: #a16207; }
+    .status-btn-input:checked + .status-btn-label.batsu { background-color: #fee2e2; border-color: #dc2626; color: #b91c1c; }
+  </style>
 </head>
-<body class="text-slate-800 min-h-screen flex flex-col pb-16">
+<body class="pb-12 text-slate-800">
 
-    <header class="bg-emerald-800 text-white shadow-lg sticky top-0 z-40">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <span class="text-2xl">⚽</span>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight">サッカー部 朝練出欠管理</h1>
-                    <p class="text-xs text-emerald-200" id="syncStatusBadge">
-                        <i class="fa-solid fa-spinner fa-spin text-xs mr-1"></i> クラウド接続中...
-                    </p>
-                </div>
-            </div>
-            <button id="adminLoginBtn" onclick="openAdminAuthModal()" class="bg-emerald-900/80 hover:bg-emerald-950 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-emerald-600 transition shadow-sm">
-                <i class="fa-solid fa-user-shield"></i> 顧問ページ
-            </button>
-        </div>
-    </header>
+  <!-- Header -->
+  <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-futbol text-2xl text-yellow-300"></i>
+        <h1 class="text-lg md:text-xl font-bold tracking-tight">サッカー部 朝練出欠管理</h1>
+      </div>
+      <span id="sync-status" class="text-xs bg-emerald-800 px-3 py-1 rounded-full flex items-center gap-1.5 border border-emerald-600">
+        <i class="fa-solid fa-circle text-emerald-400 text-[10px]"></i> 接続中...
+      </span>
+    </div>
+  </header>
 
-    <div id="emergencyBanner" class="hidden bg-gradient-to-r from-rose-600 to-red-700 text-white shadow-md border-b-2 border-rose-800 animate-pulse">
-        <div class="max-w-5xl mx-auto p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div class="flex items-center space-x-3 text-center sm:text-left">
-                <div class="bg-white/20 p-2 rounded-full text-xl flex items-center justify-center w-10 h-10">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                </div>
-                <div>
-                    <p class="font-bold text-sm sm:text-base">🚨 【直前】本日の朝練 予定変更受付中</p>
-                    <p class="text-xs text-rose-100">前日20時〜朝練開始前です。参加予定変更の場合は理由を入力してください。</p>
-                </div>
-            </div>
-            <button onclick="openEmergencyModal()" class="w-full sm:w-auto bg-white text-rose-700 font-bold px-4 py-2 rounded-xl text-xs sm:text-sm hover:bg-rose-50 shadow transition whitespace-nowrap">
-                直前変更・連絡する
-            </button>
+  <main class="max-w-4xl mx-auto px-3 sm:px-4 mt-4 space-y-4">
+
+    <!-- Emergency Notification Banner -->
+    <div id="emergency-banner" class="hidden bg-amber-500 text-white p-3.5 rounded-xl shadow-sm">
+      <div class="flex items-start gap-3">
+        <i class="fa-solid fa-triangle-exclamation text-xl mt-0.5"></i>
+        <div class="flex-1">
+          <h2 class="font-bold text-sm">【直前変更】前日夜〜当日の出欠変更</h2>
+          <p class="text-xs mt-0.5 opacity-90">体調不良等で急遽休む・参加に変更する場合は、必ず「理由」を入力して保存してください。</p>
         </div>
+      </div>
     </div>
 
-    <main class="max-w-5xl mx-auto w-full px-3 sm:px-4 py-4 flex-grow">
+    <!-- Target Month Bar -->
+    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-regular fa-calendar-days text-emerald-600 text-lg"></i>
+        <span class="text-sm font-bold text-slate-700">対象月:</span>
+        <select id="month-select" class="bg-slate-50 border border-slate-300 text-slate-800 font-bold py-1 px-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </select>
+      </div>
+      <div class="text-xs text-slate-500 flex items-center gap-1">
+        <i class="fa-solid fa-location-dot text-red-500"></i> 朝練場所: <span id="header-default-loc" class="font-bold text-slate-700">学校グラウンド</span>
+      </div>
+    </div>
 
-        <!-- STUDENT VIEW -->
-        <div id="studentView" class="space-y-6">
-            
-            <!-- Target Month Selector & Student Selection Box -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div class="flex items-center space-x-2">
-                        <label class="text-xs font-bold text-slate-500 uppercase">対象月:</label>
-                        <select id="studentMonthSelect" onchange="onStudentMonthChange()" class="bg-slate-50 border border-slate-300 font-bold text-slate-700 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                            <!-- Populated dynamically -->
-                        </select>
-                        <button onclick="promptAddNewMonth()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
-                            + 月を追加
-                        </button>
-                    </div>
-                    <div class="text-xs text-slate-500 flex items-center gap-1">
-                        <i class="fa-solid fa-clock text-emerald-600"></i> 朝練時間: <span id="studentPracticeTimeDisplay" class="font-bold text-slate-700">06:30 - 07:30</span> | 場所: <span id="studentPracticeLocationDisplay" class="font-bold text-slate-700">グラウンド</span>
-                    </div>
-                </div>
+    <!-- Navigation Tabs -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="flex border-b border-slate-200 bg-slate-50">
+        <button id="tab-btn-student" onclick="switchTab('student')" class="tab-btn active flex-1 py-3 text-center text-sm font-bold transition-all text-slate-700">
+          <i class="fa-solid fa-user-graduate mr-1.5 text-emerald-600"></i> 部員用（回答・確認）
+        </button>
+        <button id="tab-btn-advisor" onclick="switchTab('advisor')" class="tab-btn flex-1 py-3 text-center text-sm font-bold text-slate-500 transition-all">
+          <i class="fa-solid fa-user-tie mr-1.5 text-slate-500"></i> 顧問用（設定・管理）
+        </button>
+      </div>
 
-                <div class="space-y-2">
-                    <label class="block text-sm font-bold text-slate-700">
-                        <i class="fa-solid fa-user-check text-emerald-600 mr-1"></i> 部員（自分の名前）を選択してください:
-                    </label>
-                    <div class="flex gap-2">
-                        <select id="studentNameSelect" onchange="onStudentSelectChange()" class="w-full bg-emerald-50/60 border border-emerald-300 font-bold text-emerald-950 rounded-xl px-4 py-3 text-base sm:text-lg focus:ring-2 focus:ring-emerald-500 outline-none">
-                            <option value="">-- 名前を選択 --</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Attendance Submission Cards Container -->
-            <div>
-                <h2 class="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
-                    <i class="fa-solid fa-calendar-check text-emerald-600"></i> 朝練出欠入力
-                </h2>
-                <div id="studentScheduleContainer" class="space-y-3">
-                    <div class="bg-white p-8 rounded-2xl text-center text-slate-400 border border-slate-200 shadow-sm">
-                        <i class="fa-regular fa-id-card text-4xl mb-2 text-slate-300"></i>
-                        <p class="font-bold">上部で名前を選択すると出欠入力カードが表示されます</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-3 gap-2">
-                    <div>
-                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                            <i class="fa-solid fa-users text-emerald-600"></i> 部員全員の出欠状況テーブル
-                        </h2>
-                        <p class="text-xs text-slate-500">誰が朝練に参加するかリアルタイムで確認できます。</p>
-                    </div>
-                    <div id="studentSummaryCounts" class="flex gap-3 text-xs font-bold">
-                        <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-lg" id="summaryCountCircle">◯ 0人</span>
-                        <span class="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-lg" id="summaryCountTriangle">△ 0人</span>
-                        <span class="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg" id="summaryCountCross">✕ 0人</span>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
-                    <table class="w-full text-left border-collapse text-xs">
-                        <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                            <tr id="publicMatrixHeaderRow">
-                                <th class="p-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 min-w-[100px]">部員名</th>
-                                <!-- Dynamic Date Columns -->
-                            </tr>
-                        </thead>
-                        <tbody id="publicMatrixTableBody" class="divide-y divide-slate-100">
-                            <!-- Dynamic Rows -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
+      <!-- SECTION: 部員用 (STUDENT) -->
+      <div id="tab-content-student" class="p-4 space-y-6">
+        
+        <!-- Member Selector / Self Registration -->
+        <div class="bg-emerald-50/60 p-4 rounded-xl border border-emerald-100 space-y-3">
+          <label class="block text-xs font-bold text-emerald-900 uppercase tracking-wider">
+            <i class="fa-solid fa-id-card text-emerald-600 mr-1"></i> 部員名を選択してください
+          </label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <select id="student-name-select" class="flex-1 bg-white border border-emerald-300 font-bold text-slate-800 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm">
+              <option value="">-- 名前を選択 --</option>
+            </select>
+            <button onclick="openRegisterNameModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-sm transition text-xs flex items-center justify-center gap-1.5 shrink-0">
+              <i class="fa-solid fa-user-plus"></i> 新規名前登録
+            </button>
+          </div>
+          <p class="text-xs text-emerald-700">※新規部員は「新規名前登録」から名前を追加できます。</p>
         </div>
 
-        <div id="adminView" class="hidden space-y-4">
-            <div class="bg-slate-900 text-white p-4 rounded-2xl shadow-md flex justify-between items-center">
-                <div class="flex items-center space-x-2">
-                    <span class="bg-emerald-500 text-xs text-slate-950 font-black px-2 py-0.5 rounded">顧問用</span>
-                    <h2 class="font-bold text-base sm:text-lg">管理・分析ダッシュボード</h2>
+        <!-- Practice Days List & Response Cards -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <i class="fa-solid fa-list-check text-emerald-600"></i> 月間出欠の回答
+            </h3>
+            <span class="text-xs text-slate-500">〇: 参加 / △: 遅刻・早退 / ✕: 不参加</span>
+          </div>
+
+          <div id="student-schedule-container" class="space-y-3">
+          </div>
+        </div>
+
+        <!-- PUBLIC ATTENDANCE MATRIX FOR STUDENTS -->
+        <div class="pt-6 border-t border-slate-200 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <i class="fa-solid fa-users-viewfinder text-emerald-600"></i> 全員の出欠状況テーブル
+            </h3>
+            <span class="text-xs text-slate-400">リアルタイム同期中</span>
+          </div>
+
+          <!-- Matrix Table -->
+          <div class="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-sm max-h-80">
+            <table class="w-full text-xs text-center border-collapse">
+              <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10">
+                <tr id="student-matrix-header">
+                  <th class="p-2 border border-slate-200 bg-slate-100 min-w-[80px] sticky left-0 z-20">部員名</th>
+                </tr>
+              </thead>
+              <tbody id="student-matrix-body">
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Daily Participant List -->
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <h4 class="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+              <i class="fa-solid fa-calendar-day text-emerald-600"></i> 日別 参加メンバー詳細
+            </h4>
+            <div id="student-daily-details" class="space-y-2 text-xs text-slate-700">
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SECTION: 顧問用 (ADVISOR) -->
+      <div id="tab-content-advisor" class="p-4 space-y-6 hidden">
+        
+        <!-- PIN Auth Mask -->
+        <div id="advisor-auth-container" class="max-w-xs mx-auto my-8 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm text-center space-y-4">
+          <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-xl">
+            <i class="fa-solid fa-lock"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-800">顧問ログイン</h3>
+            <p class="text-xs text-slate-500 mt-1">管理者PINコードを入力してください (初期: 2692)</p>
+          </div>
+          <div class="space-y-3">
+            <input type="password" id="advisor-pin-input" placeholder="PIN入力" maxlength="8" class="w-full text-center tracking-widest text-lg font-bold p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <button onclick="checkAdvisorPIN()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl shadow-sm transition text-xs">
+              ログイン認証
+            </button>
+          </div>
+        </div>
+
+        <!-- Advisor Main Panel -->
+        <div id="advisor-main-panel" class="hidden space-y-6">
+
+          <!-- Sub Tabs inside Advisor -->
+          <div class="flex border-b border-slate-200 text-xs font-bold gap-2">
+            <button id="adv-subtab-btn-dash" onclick="switchAdvSubTab('dash')" class="py-2 px-3 text-emerald-600 border-b-2 border-emerald-600">
+              <i class="fa-solid fa-chart-column mr-1"></i> 集計・ダッシュボード
+            </button>
+            <button id="adv-subtab-btn-schedule" onclick="switchAdvSubTab('schedule')" class="py-2 px-3 text-slate-500">
+              <i class="fa-solid fa-calendar-pen mr-1"></i> 日程・時間・一括設定
+            </button>
+            <button id="adv-subtab-btn-members" onclick="switchAdvSubTab('members')" class="py-2 px-3 text-slate-500">
+              <i class="fa-solid fa-users mr-1"></i> 部員管理
+            </button>
+          </div>
+
+          <!-- SUBTAB: Dashboard & Matrix -->
+          <div id="adv-subtab-dash" class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="font-bold text-slate-800 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                <i class="fa-solid fa-table-cells text-emerald-600"></i> 月間出欠マトリクス表
+              </h3>
+              <button onclick="exportCSV()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1">
+                <i class="fa-solid fa-file-csv"></i> CSV出力
+              </button>
+            </div>
+
+            <div class="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-sm max-h-[400px]">
+              <table class="w-full text-xs text-center border-collapse">
+                <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10">
+                  <tr id="advisor-matrix-header">
+                    <th class="p-2 border border-slate-200 bg-slate-100 min-w-[80px] sticky left-0 z-20">部員名</th>
+                  </tr>
+                </thead>
+                <tbody id="advisor-matrix-body">
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Emergency Change Logs -->
+            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200 space-y-2">
+              <h4 class="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                <i class="fa-solid fa-bell text-amber-600"></i> 直前緊急変更ログ（理由一覧）
+              </h4>
+              <div id="emergency-log-list" class="space-y-1.5 text-xs text-slate-700 max-h-40 overflow-y-auto">
+                <p class="text-slate-400 italic">緊急連絡ログはありません。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBTAB: Schedule Settings -->
+          <div id="adv-subtab-schedule" class="space-y-6 hidden">
+            
+            <!-- Bulk Settings -->
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+              <h4 class="font-bold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                <i class="fa-solid fa-wand-magic-sparkles text-emerald-600"></i> 一括スケジュール設定
+              </h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label class="block text-slate-600 font-bold mb-1">デフォルト時間（全日一括）</label>
+                  <div class="flex items-center gap-1">
+                    <input type="time" id="bulk-start-time" value="07:00" class="border p-1.5 rounded w-full bg-white">
+                    <span>〜</span>
+                    <input type="time" id="bulk-end-time" value="08:00" class="border p-1.5 rounded w-full bg-white">
+                  </div>
+                  <button onclick="applyBulkTimes()" class="mt-2 w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-1.5 rounded transition">
+                    時間を一括適用
+                  </button>
                 </div>
-                <button onclick="exitAdminView()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i> 部員画面に戻る
+                <div>
+                  <label class="block text-slate-600 font-bold mb-1">休みに設定する曜日</label>
+                  <div class="flex flex-wrap gap-2 py-1">
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="0"> 日</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="1"> 月</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="2"> 火</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="3"> 水</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="4"> 木</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="5"> 金</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" class="day-off-check" value="6"> 土</label>
+                  </div>
+                  <button onclick="applyBulkDayOffs()" class="mt-2 w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-1.5 rounded transition">
+                    選択曜日を一括OFFにする
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Month Creator -->
+            <div class="flex items-center justify-between bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+              <span class="text-xs font-bold text-emerald-900">新しい対象月の追加</span>
+              <div class="flex items-center gap-2">
+                <input type="month" id="new-month-input" class="text-xs p-1.5 border rounded bg-white">
+                <button onclick="addNewMonth()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm">
+                  月を追加
                 </button>
+              </div>
             </div>
 
-            <!-- Admin Nav Tabs -->
-            <div class="flex border-b border-slate-200 bg-white rounded-xl p-1 shadow-sm overflow-x-auto no-scrollbar">
-                <button id="adminTab1" onclick="switchAdminTab('matrix')" class="flex-1 min-w-[100px] py-2 px-3 text-xs sm:text-sm font-bold text-center rounded-lg transition text-slate-500">出欠集計表</button>
-                <button id="adminTab2" onclick="switchAdminTab('settings')" class="flex-1 min-w-[100px] py-2 px-3 text-xs sm:text-sm font-bold text-center rounded-lg transition text-slate-500">日程・場所設定</button>
-                <button id="adminTab3" onclick="switchAdminTab('members')" class="flex-1 min-w-[100px] py-2 px-3 text-xs sm:text-sm font-bold text-center rounded-lg transition text-slate-500">部員管理</button>
-                <button id="adminTab4" onclick="switchAdminTab('email')" class="flex-1 min-w-[100px] py-2 px-3 text-xs sm:text-sm font-bold text-center rounded-lg transition text-slate-500">EmailJS転送設定</button>
-            </div>
-
-            <!-- Admin Tab 1: Attendance Matrix -->
-            <div id="tabContentMatrix" class="space-y-4">
-                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <div class="flex items-center gap-2">
-                        <label class="text-xs font-bold text-slate-500">対象月:</label>
-                        <select id="adminMonthSelect" onchange="onAdminMonthChange()" class="bg-slate-50 border border-slate-300 font-bold text-slate-700 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                            <!-- Populated dynamically -->
-                        </select>
-                    </div>
-                    <button onclick="exportCSV()" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow">
-                        <i class="fa-solid fa-file-csv text-sm"></i> CSV出力 (UTF-8 BOM付き)
-                    </button>
-                </div>
-
-                <!-- Emergency Changes Log -->
-                <div class="bg-rose-50 border border-rose-200 rounded-2xl p-4 shadow-sm space-y-2">
-                    <h3 class="text-xs font-bold text-rose-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <i class="fa-solid fa-clock-rotate-left"></i> 直前緊急変更・理由ログ
-                    </h3>
-                    <div id="emergencyLogList" class="space-y-1.5 max-h-48 overflow-y-auto text-xs text-slate-700">
-                        <p class="text-slate-400 italic">直前変更の記録はありません</p>
-                    </div>
-                </div>
-
-                <!-- Matrix Table -->
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse text-xs">
-                            <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                                <tr id="adminMatrixHeaderRow">
-                                    <th class="p-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200">部員名</th>
-                                    <!-- Dynamic Days -->
-                                </tr>
-                            </thead>
-                            <tbody id="adminMatrixTableBody" class="divide-y divide-slate-100">
-                                <!-- Dynamic Rows -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Admin Tab 2: Settings -->
-            <div id="tabContentSettings" class="hidden space-y-4">
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                    <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-                        <i class="fa-solid fa-sliders text-emerald-600"></i> 練習日・時間・場所の一括設定
-                    </h3>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">対象月を選択・指定</label>
-                            <input type="month" id="adminCreateMonthInput" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">基本練習時間</label>
-                            <input type="text" id="adminDefaultTimeInput" value="06:30 - 07:30" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">基本練習場所</label>
-                            <input type="text" id="adminDefaultLocationInput" value="グラウンド" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">一括練習休み (OFF) 指定曜日</label>
-                        <div class="flex flex-wrap gap-2">
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="0" class="rounded text-emerald-600"> <span>日</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="1" class="rounded text-emerald-600"> <span>月</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="2" class="rounded text-emerald-600"> <span>火</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="3" class="rounded text-emerald-600"> <span>水</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="4" class="rounded text-emerald-600"> <span>木</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="5" class="rounded text-emerald-600"> <span>金</span>
-                            </label>
-                            <label class="cursor-pointer flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200">
-                                <input type="checkbox" name="offDay" value="6" class="rounded text-emerald-600"> <span>土</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="pt-2">
-                        <button onclick="applyMonthScheduleSettings()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow">
-                            指定月のスケジュールを一括生成・クラウド更新
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Admin Tab 3: Member Management -->
-            <div id="tabContentMembers" class="hidden space-y-4">
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                    <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-                        <i class="fa-solid fa-users-gear text-emerald-600"></i> 部員名の追加・個別削除
-                    </h3>
-
-                    <div class="flex gap-2">
-                        <input type="text" id="newMemberNameInput" placeholder="部員の氏名を入力" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500">
-                        <button onclick="addNewMember()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition shadow">
-                            追加
-                        </button>
-                    </div>
-
-                    <div class="space-y-2 pt-2">
-                        <h4 class="text-xs font-bold text-slate-500 uppercase">登録部員一覧</h4>
-                        <div id="adminMemberList" class="divide-y divide-slate-100 bg-slate-50 rounded-xl border border-slate-200 p-2 max-h-60 overflow-y-auto">
-                            <!-- Dynamic Member List -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Admin Tab 4: EmailJS Integration -->
-            <div id="tabContentEmail" class="hidden space-y-4">
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                    <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-                        <i class="fa-solid fa-envelope text-emerald-600"></i> EmailJS 直接メール通知連携 (任意設定)
-                    </h3>
-                    <p class="text-xs text-slate-500">直前変更が送信された際、顧問宛てにメールを自動直接送信したい場合にEmailJSの情報を設定します。</p>
-
-                    <div class="space-y-3">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">Public Key</label>
-                            <input type="text" id="emailjsPublicKey" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">Service ID</label>
-                            <input type="text" id="emailjsServiceId" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">Template ID</label>
-                            <input type="text" id="emailjsTemplateId" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                    </div>
-
-                    <button onclick="saveEmailJSSettings()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow">
-                        EmailJS設定を保存
-                    </button>
-                </div>
-            </div>
-
-        </div>
-    </main>
-
-    <!-- Admin PIN Auth Modal -->
-    <div id="adminAuthModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl border border-slate-100 text-center space-y-4">
-            <div class="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl">
-                <i class="fa-solid fa-lock"></i>
-            </div>
-            <div>
-                <h3 class="font-bold text-slate-800 text-lg">顧問認証</h3>
-                <p class="text-xs text-slate-500">認証コードを入力してください</p>
-            </div>
-            <div>
-                <!-- Password Masked Output Without Hint -->
-                <input type="password" id="adminPinInput" placeholder="••••" maxlength="8" class="w-full text-center tracking-widest text-2xl font-bold bg-slate-50 border border-slate-300 rounded-2xl py-3 focus:ring-2 focus:ring-emerald-500 outline-none">
-            </div>
-            <div class="flex gap-2">
-                <button onclick="closeAdminAuthModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm transition">キャンセル</button>
-                <button onclick="verifyAdminPin()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow">認証</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Emergency Modal -->
-    <div id="emergencyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 space-y-4">
-            <div class="flex items-center space-x-2 text-rose-600">
-                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
-                <h3 class="font-bold text-slate-800 text-lg">直前変更・理由入力</h3>
-            </div>
-            <p class="text-xs text-slate-500">前日20:00以降の予定変更は理由の記載が必須です。クラウドへ即時連携されます。</p>
-            
+            <!-- Individual Day Settings List -->
             <div class="space-y-3">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">氏名</label>
-                    <select id="emergencyStudentSelect" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500">
-                        <!-- Populated -->
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">対象日付</label>
-                    <input type="date" id="emergencyDateInput" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold outline-none">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">変更後の状況</label>
-                    <select id="emergencyStatusSelect" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold outline-none">
-                        <option value="✕">✕ (不参加)</option>
-                        <option value="△">△ (遅刻/一部参加)</option>
-                        <option value="◯">◯ (参加)</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">変更理由 (必須)</label>
-                    <textarea id="emergencyReasonInput" rows="3" placeholder="発熱、体調不良、足の痛みが強いため等" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
-                </div>
+              <h4 class="font-bold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                <i class="fa-solid fa-calendar-day text-emerald-600"></i> 日付ごとの個別日程・時間変更
+              </h4>
+              <div id="advisor-day-settings-list" class="space-y-3">
+              </div>
             </div>
 
-            <div class="flex gap-2 pt-2">
-                <button onclick="closeEmergencyModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm transition">キャンセル</button>
-                <button onclick="submitEmergencyChange()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow">送信する</button>
+          </div>
+
+          <!-- SUBTAB: Member Management -->
+          <div id="adv-subtab-members" class="space-y-4 hidden">
+            <h4 class="font-bold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1">
+              <i class="fa-solid fa-users-gear text-emerald-600"></i> 部員リストの削除・管理
+            </h4>
+            <div id="advisor-member-list" class="divide-y border rounded-xl bg-white overflow-hidden text-xs">
             </div>
+          </div>
+
         </div>
+
+      </div>
+
     </div>
 
-    <script>
-        // 1. Embedded Firebase Configuration (Pre-configured for ZERO-setup instant sync)
-        const FIREBASE_CONFIG = {
-            apiKey: "AIzaSyAoI0M0QGxJnhr_KGUMcOnIdOGGGMP8cwA",
-            authDomain: "soccer-club-app-4041b.firebaseapp.com",
-            databaseURL: "https://soccer-club-app-4041b-default-rtdb.firebaseio.com",
-            projectId: "soccer-club-app-4041b",
-            storageBucket: "soccer-club-app-4041b.appspot.com"
-        };
+  </main>
 
-        // Application Global State
-        window.APP_STATE = {
-            dbRef: null,
-            members: [],
-            schedules: {},
-            attendances: {},
-            emergencyLogs: [],
-            emailSettings: {},
-            currentMonthKey: new Date().toISOString().slice(0, 7),
-            selectedStudent: ""
-        };
+  <!-- Modal: Self Member Registration -->
+  <div id="register-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-xl border border-slate-100">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-user-plus text-emerald-600"></i> 部員名の新規登録
+        </h3>
+        <button onclick="closeRegisterNameModal()" class="text-slate-400 hover:text-slate-600 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500">フルネームを入力して登録してください。</p>
+      <div>
+        <input type="text" id="new-member-name-input" placeholder="例: 三笘 薫" class="w-full border border-slate-300 p-2.5 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeRegisterNameModal()" class="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg">
+          キャンセル
+        </button>
+        <button onclick="submitRegisterName()" class="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm">
+          登録する
+        </button>
+      </div>
+    </div>
+  </div>
 
-        // Initialize Firebase on Page Load
-        window.addEventListener('DOMContentLoaded', () => {
-            initFirebaseConnection();
-            checkEmergencyBannerTrigger();
+  <script>
+    // Firebase Config Definition
+    const firebaseConfig = {
+      apiKey: "AIzaSyAoI0M0QGxJnhr_KGUMcOnIdOGGGMP8cwA",
+      authDomain: "soccer-club-app-4041b.firebaseapp.com",
+      databaseURL: "https://soccer-club-app-4041b-default-rtdb.firebaseio.com",
+      projectId: "soccer-club-app-4041b",
+      storageBucket: "soccer-club-app-4041b.appspot.com"
+    };
+
+    let db = null;
+    let currentMonth = "";
+    let members = [];
+    let schedules = {};
+    let responses = {};
+    let emergencyLogs = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initFirebase();
+      setupDefaultMonth();
+      checkEmergencyBannerWindow();
+    });
+
+    function initFirebase() {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.database();
+        
+        // Listen to cloud updates
+        db.ref('soccer_app_data').on('value', (snapshot) => {
+          const data = snapshot.val() || {};
+          members = data.members || ["山田 太郎", "佐藤 健", "鈴木 一郎"];
+          schedules = data.schedules || {};
+          responses = data.responses || {};
+          emergencyLogs = data.emergencyLogs || [];
+
+          updateSyncStatus(true);
+          renderApp();
+        }, (err) => {
+          console.error("Firebase Sync Error:", err);
+          updateSyncStatus(false);
         });
 
-        function initFirebaseConnection() {
-            try {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(FIREBASE_CONFIG);
-                }
-                const db = firebase.database();
-                window.APP_STATE.dbRef = db.ref('soccer_club_data');
+      } catch (e) {
+        console.error("Firebase Init Failed:", e);
+        updateSyncStatus(false);
+      }
+    }
 
-                document.getElementById('syncStatusBadge').innerHTML = `<i class="fa-solid fa-cloud text-xs text-emerald-300 mr-1"></i>クラウドリアルタイム同期中`;
+    function updateSyncStatus(connected) {
+      const el = document.getElementById('sync-status');
+      if (connected) {
+        el.innerHTML = `<i class="fa-solid fa-circle text-emerald-400 text-[10px]"></i> クラウド同期中`;
+        el.className = "text-xs bg-emerald-800 px-3 py-1 rounded-full flex items-center gap-1.5 text-emerald-100 border border-emerald-600";
+      } else {
+        el.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-300 text-[10px]"></i> ローカルモード`;
+        el.className = "text-xs bg-amber-800 px-3 py-1 rounded-full flex items-center gap-1.5 text-amber-100 border border-amber-600";
+      }
+    }
 
-                // Listen to Realtime Database Snapshot Changes
-                window.APP_STATE.dbRef.on('value', (snapshot) => {
-                    const data = snapshot.val() || {};
-                    
-                    window.APP_STATE.members = data.members || [];
-                    window.APP_STATE.schedules = data.schedules || {};
-                    window.APP_STATE.attendances = data.attendances || {};
-                    window.APP_STATE.emergencyLogs = data.emergencyLogs || [];
-                    window.APP_STATE.emailSettings = data.emailSettings || {};
+    function pushDataToCloud() {
+      if (db) {
+        db.ref('soccer_app_data').set({
+          members: members,
+          schedules: schedules,
+          responses: responses,
+          emergencyLogs: emergencyLogs
+        });
+      }
+    }
 
-                    // Setup default month if not existent
-                    setupDefaultSchedules(window.APP_STATE.currentMonthKey);
+    function setupDefaultMonth() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      currentMonth = `${yyyy}-${mm}`;
+      
+      updateMonthDropdown();
+      ensureScheduleForMonth(currentMonth);
+    }
 
-                    // Re-render Views
-                    initMonthSelectors();
-                    populateStudentSelect();
-                    renderStudentView();
-                    renderPublicMatrix();
-                    renderAdminMatrix();
-                    renderMemberList();
-                    renderEmergencyLogs();
-                });
+    function updateMonthDropdown() {
+      const select = document.getElementById('month-select');
+      select.innerHTML = '';
 
-            } catch (err) {
-                console.error("Firebase init failed: ", err);
-                document.getElementById('syncStatusBadge').innerHTML = `<i class="fa-solid fa-triangle-exclamation text-xs text-rose-300 mr-1"></i>オフラインモード`;
-            }
+      const months = new Set(Object.keys(schedules));
+      months.add(currentMonth);
+
+      Array.from(months).sort().forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = `${m.replace('-', '年')}月`;
+        if (m === currentMonth) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      select.onchange = (e) => {
+        currentMonth = e.target.value;
+        ensureScheduleForMonth(currentMonth);
+        renderApp();
+      };
+    }
+
+    function ensureScheduleForMonth(ym) {
+      if (!schedules[ym]) {
+        schedules[ym] = {};
+        const [year, month] = ym.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dayStr = String(d).padStart(2, '0');
+          const dateKey = `${ym}-${dayStr}`;
+          const dateObj = new Date(year, month - 1, d);
+          const dayOfWeek = dateObj.getDay();
+
+          const isOff = (dayOfWeek === 0 || dayOfWeek === 6);
+          schedules[ym][dateKey] = {
+            status: isOff ? 'OFF' : 'ON',
+            startTime: '07:00',
+            endTime: '08:00',
+            location: '学校グラウンド',
+            note: ''
+          };
         }
+      }
+    }
 
-        // Push Current App State to Firebase Cloud
-        function syncToCloud() {
-            if (window.APP_STATE.dbRef) {
-                window.APP_STATE.dbRef.set({
-                    members: window.APP_STATE.members,
-                    schedules: window.APP_STATE.schedules,
-                    attendances: window.APP_STATE.attendances,
-                    emergencyLogs: window.APP_STATE.emergencyLogs,
-                    emailSettings: window.APP_STATE.emailSettings,
-                    updatedAt: new Date().toISOString()
-                });
-            }
+    function switchTab(tab) {
+      document.getElementById('tab-btn-student').classList.toggle('active', tab === 'student');
+      document.getElementById('tab-btn-advisor').classList.toggle('active', tab === 'advisor');
+      document.getElementById('tab-content-student').classList.toggle('hidden', tab !== 'student');
+      document.getElementById('tab-content-advisor').classList.toggle('hidden', tab !== 'advisor');
+    }
+
+    function switchAdvSubTab(sub) {
+      ['dash', 'schedule', 'members'].forEach(s => {
+        document.getElementById(`adv-subtab-${s}`).classList.toggle('hidden', s !== sub);
+        const btn = document.getElementById(`adv-subtab-btn-${s}`);
+        if (s === sub) {
+          btn.className = "py-2 px-3 text-emerald-600 border-b-2 border-emerald-600 font-bold";
+        } else {
+          btn.className = "py-2 px-3 text-slate-500 font-bold";
         }
+      });
+    }
 
-        // Setup Month Days Schedule Grid
-        function setupDefaultSchedules(mKey) {
-            if (!window.APP_STATE.schedules[mKey]) {
-                window.APP_STATE.schedules[mKey] = {};
-                const [year, month] = mKey.split('-').map(Number);
-                const daysInMonth = new Date(year, month, 0).getDate();
+    function checkAdvisorPIN() {
+      const pin = document.getElementById('advisor-pin-input').value;
+      if (pin === "2692") {
+        document.getElementById('advisor-auth-container').classList.add('hidden');
+        document.getElementById('advisor-main-panel').classList.remove('hidden');
+      } else {
+        alert("PINコードが正しくありません。(初期: 2692)");
+      }
+    }
 
-                for (let d = 1; d <= daysInMonth; d++) {
-                    const dateStr = `${mKey}-${String(d).padStart(2, '0')}`;
-                    const dayOfWeek = new Date(year, month - 1, d).getDay();
-                    const isOff = (dayOfWeek === 0); // Sunday OFF by default
+    function openRegisterNameModal() {
+      document.getElementById('register-modal').classList.remove('hidden');
+      document.getElementById('new-member-name-input').value = '';
+    }
 
-                    window.APP_STATE.schedules[mKey][dateStr] = {
-                        time: "06:30 - 07:30",
-                        location: "グラウンド",
-                        isOff: isOff
-                    };
-                }
-            }
-        }
+    function closeRegisterNameModal() {
+      document.getElementById('register-modal').classList.add('hidden');
+    }
 
-        function initMonthSelectors() {
-            const selectS = document.getElementById('studentMonthSelect');
-            const selectA = document.getElementById('adminMonthSelect');
+    function submitRegisterName() {
+      const name = document.getElementById('new-member-name-input').value.trim();
+      if (!name) { alert("名前を入力してください。"); return; }
+      if (members.includes(name)) { alert("その名前は既に登録されています。"); return; }
+      members.push(name);
+      pushDataToCloud();
+      closeRegisterNameModal();
+      renderApp();
+      
+      document.getElementById('student-name-select').value = name;
+      renderStudentSchedule();
+    }
+
+    function deleteMember(name) {
+      if (confirm(`「${name}」さんを削除しますか？`)) {
+        members = members.filter(m => m !== name);
+        pushDataToCloud();
+        renderApp();
+      }
+    }
+
+    function renderApp() {
+      updateMonthDropdown();
+      renderMemberDropdown();
+      renderStudentSchedule();
+      renderPublicMatrix();
+      renderAdvisorMatrix();
+      renderAdvisorScheduleSettings();
+      renderAdvisorMemberList();
+      renderEmergencyLogs();
+    }
+
+    function renderMemberDropdown() {
+      const select = document.getElementById('student-name-select');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">-- 名前を選択 --</option>';
+      members.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (m === currentVal) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.onchange = () => renderStudentSchedule();
+    }
+
+    function renderStudentSchedule() {
+      const container = document.getElementById('student-schedule-container');
+      container.innerHTML = '';
+      
+      const selectedMember = document.getElementById('student-name-select').value;
+      const monthSched = schedules[currentMonth] || {};
+      const dates = Object.keys(monthSched).sort();
+
+      if (dates.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-400">練習日程はありません。</p>';
+        return;
+      }
+
+      dates.forEach(dateKey => {
+        const sched = monthSched[dateKey];
+        const dayNum = dateKey.split('-')[2];
+        const dayOfWeekStr = ['日','月','火','水','木','金','土'][new Date(dateKey).getDay()];
+        const isOff = sched.status === 'OFF';
+
+        const mResp = (responses[currentMonth] && responses[currentMonth][dateKey] && responses[currentMonth][dateKey][selectedMember]) || {};
+        const currentStatus = mResp.status || '';
+        const currentReason = mResp.reason || '';
+
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-xl border ${isOff ? 'bg-slate-100/70 border-slate-200' : 'bg-white border-slate-200 shadow-sm'} space-y-2.5`;
+
+        card.innerHTML = `
+          <div class="flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-slate-800">${parseInt(dayNum)}日 (${dayOfWeekStr})</span>
+              ${isOff ? '<span class="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">OFF (休み)</span>' : ''}
+              ${sched.status === 'EMERGENCY' ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold">直前変更あり</span>' : ''}
+            </div>
+            ${!isOff ? `
+              <div class="text-xs text-slate-500 font-medium flex items-center gap-2">
+                <span><i class="fa-regular fa-clock"></i> ${sched.startTime}〜${sched.endTime}</span>
+                <span><i class="fa-solid fa-location-dot"></i> ${sched.location}</span>
+              </div>
+            ` : ''}
+          </div>
+
+          ${sched.note ? `<p class="text-xs text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-100"><i class="fa-solid fa-circle-info mr-1"></i>${sched.note}</p>` : ''}
+
+          ${!isOff ? `
+            <div class="pt-1">
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer">
+                  <input type="radio" name="resp-${dateKey}" value="〇" ${currentStatus === '〇' ? 'checked' : ''} class="status-btn-input hidden" onchange="saveStudentResponse('${dateKey}')" ${!selectedMember ? 'disabled' : ''}>
+                  <div class="status-btn-label maru border rounded-xl p-2 text-center font-bold text-xs bg-slate-50 text-slate-600 border-slate-200 transition">
+                    〇 参加
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="resp-${dateKey}" value="△" ${currentStatus === '△' ? 'checked' : ''} class="status-btn-input hidden" onchange="saveStudentResponse('${dateKey}')" ${!selectedMember ? 'disabled' : ''}>
+                  <div class="status-btn-label sankaku border rounded-xl p-2 text-center font-bold text-xs bg-slate-50 text-slate-600 border-slate-200 transition">
+                    △ 遅刻/早退
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="resp-${dateKey}" value="✕" ${currentStatus === '✕' ? 'checked' : ''} class="status-btn-input hidden" onchange="saveStudentResponse('${dateKey}')" ${!selectedMember ? 'disabled' : ''}>
+                  <div class="status-btn-label batsu border rounded-xl p-2 text-center font-bold text-xs bg-slate-50 text-slate-600 border-slate-200 transition">
+                    ✕ 不参加
+                  </div>
+                </label>
+              </div>
+
+              <div id="reason-box-${dateKey}" class="${(currentStatus === '✕' || currentStatus === '△' || isEmergencyWindow()) ? 'block' : 'hidden'} mt-2">
+                <input type="text" id="reason-input-${dateKey}" value="${currentReason}" placeholder="理由を入力 (例: 発熱、法事、遅刻理由など)" class="w-full border p-2 text-xs rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none" onchange="saveStudentResponse('${dateKey}')">
+              </div>
+            </div>
+          ` : ''}
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function saveStudentResponse(dateKey) {
+      const selectedMember = document.getElementById('student-name-select').value;
+      if (!selectedMember) { alert("名前を選択してください。"); return; }
+
+      const radios = document.getElementsByName(`resp-${dateKey}`);
+      let status = '';
+      for (const r of radios) {
+        if (r.checked) { status = r.value; break; }
+      }
+
+      const reasonInput = document.getElementById(`reason-input-${dateKey}`);
+      const reason = reasonInput ? reasonInput.value.trim() : '';
+
+      if (!responses[currentMonth]) responses[currentMonth] = {};
+      if (!responses[currentMonth][dateKey]) responses[currentMonth][dateKey] = {};
+
+      responses[currentMonth][dateKey][selectedMember] = {
+        status: status,
+        reason: reason,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (isEmergencyWindow() && (status === '✕' || status === '△')) {
+        emergencyLogs.unshift({
+          dateKey: dateKey,
+          member: selectedMember,
+          status: status,
+          reason: reason,
+          time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+        });
+      }
+
+      pushDataToCloud();
+      renderApp();
+    }
+
+    function renderPublicMatrix() {
+      renderMatrixTable('student-matrix-header', 'student-matrix-body');
+      
+      const detailContainer = document.getElementById('student-daily-details');
+      detailContainer.innerHTML = '';
+
+      const monthSched = schedules[currentMonth] || {};
+      const dates = Object.keys(monthSched).sort();
+
+      dates.forEach(dateKey => {
+        const sched = monthSched[dateKey];
+        if (sched.status === 'OFF') return;
+
+        const dayNum = dateKey.split('-')[2];
+        const dayOfWeekStr = ['日','月','火','水','木','金','土'][new Date(dateKey).getDay()];
+        
+        const dateResps = (responses[currentMonth] && responses[currentMonth][dateKey]) || {};
+        const maruMembers = [];
+        const sankakuMembers = [];
+
+        members.forEach(m => {
+          const st = dateResps[m] ? dateResps[m].status : '';
+          if (st === '〇') maruMembers.push(m);
+          if (st === '△') sankakuMembers.push(`${m}(${dateResps[m].reason || '△'})`);
+        });
+
+        const row = document.createElement('div');
+        row.className = "bg-white p-2.5 rounded-lg border border-slate-200 text-xs space-y-1";
+        row.innerHTML = `
+          <div class="font-bold text-slate-800 flex justify-between">
+            <span>${parseInt(dayNum)}日 (${dayOfWeekStr}) - 参加予定 (${maruMembers.length}名)</span>
+            <span class="text-slate-400 font-normal">${sched.startTime}〜${sched.endTime}</span>
+          </div>
+          <div class="text-slate-600">
+            <span class="font-semibold text-emerald-700">【〇 参加】:</span> ${maruMembers.length ? maruMembers.join(', ') : 'なし'}
+          </div>
+          ${sankakuMembers.length ? `<div class="text-amber-700"><span class="font-semibold">【△ 遅刻・早退】:</span> ${sankakuMembers.join(', ')}</div>` : ''}
+        `;
+        detailContainer.appendChild(row);
+      });
+    }
+
+    function renderAdvisorMatrix() {
+      renderMatrixTable('advisor-matrix-header', 'advisor-matrix-body');
+    }
+
+    function renderMatrixTable(headerId, bodyId) {
+      const headerRow = document.getElementById(headerId);
+      const body = document.getElementById(bodyId);
+      
+      headerRow.innerHTML = '<th class="p-2 border border-slate-200 bg-slate-100 min-w-[90px] sticky left-0 z-20 shadow-sm">部員名</th>';
+      body.innerHTML = '';
+
+      const monthSched = schedules[currentMonth] || {};
+      const dates = Object.keys(monthSched).sort();
+
+      dates.forEach(d => {
+        const dayNum = parseInt(d.split('-')[2]);
+        const isOff = monthSched[d].status === 'OFF';
+        const th = document.createElement('th');
+        th.className = `p-1.5 border border-slate-200 min-w-[36px] ${isOff ? 'bg-slate-200 text-slate-400' : 'bg-slate-50 text-slate-700'}`;
+        th.textContent = dayNum;
+        headerRow.appendChild(th);
+      });
+
+      members.forEach(m => {
+        const tr = document.createElement('tr');
+        
+        const tdName = document.createElement('td');
+        tdName.className = "p-2 border border-slate-200 bg-white font-bold text-left sticky left-0 z-10 shadow-sm truncate max-w-[100px]";
+        tdName.textContent = m;
+        tr.appendChild(tdName);
+
+        dates.forEach(d => {
+          const td = document.createElement('td');
+          const isOff = monthSched[d].status === 'OFF';
+          
+          if (isOff) {
+            td.className = "p-1.5 border border-slate-200 bg-slate-100 text-slate-300";
+            td.textContent = "-";
+          } else {
+            const resp = (responses[currentMonth] && responses[currentMonth][d] && responses[currentMonth][d][m]) || {};
+            const st = resp.status || '-';
             
-            // Keep selected option
-            const currS = selectS.value || window.APP_STATE.currentMonthKey;
-            const currA = selectA.value || window.APP_STATE.currentMonthKey;
+            let colorClass = "text-slate-300";
+            if (st === '〇') colorClass = "text-emerald-600 font-bold bg-emerald-50";
+            if (st === '△') colorClass = "text-amber-600 font-bold bg-amber-50";
+            if (st === '✕') colorClass = "text-red-600 font-bold bg-red-50";
 
-            selectS.innerHTML = "";
-            selectA.innerHTML = "";
+            td.className = `p-1.5 border border-slate-200 ${colorClass}`;
+            td.textContent = st;
+          }
+          tr.appendChild(td);
+        });
 
-            const monthKeys = Object.keys(window.APP_STATE.schedules).sort();
-            if (!monthKeys.includes(window.APP_STATE.currentMonthKey)) {
-                monthKeys.push(window.APP_STATE.currentMonthKey);
-                monthKeys.sort();
-            }
+        body.appendChild(tr);
+      });
+    }
 
-            monthKeys.forEach(mKey => {
-                const [y, m] = mKey.split('-');
-                const label = `${y}年${parseInt(m)}月`;
+    function renderAdvisorScheduleSettings() {
+      const container = document.getElementById('advisor-day-settings-list');
+      container.innerHTML = '';
 
-                const optS = document.createElement('option');
-                optS.value = mKey; optS.textContent = label;
-                if (mKey === currS) optS.selected = true;
-                selectS.appendChild(optS);
+      const monthSched = schedules[currentMonth] || {};
+      const dates = Object.keys(monthSched).sort();
 
-                const optA = document.createElement('option');
-                optA.value = mKey; optA.textContent = label;
-                if (mKey === currA) optA.selected = true;
-                selectA.appendChild(optA);
-            });
+      dates.forEach(dateKey => {
+        const sched = monthSched[dateKey];
+        const dayNum = dateKey.split('-')[2];
+        const dayOfWeekStr = ['日','月','火','水','木','金','土'][new Date(dateKey).getDay()];
+
+        const card = document.createElement('div');
+        card.className = "p-3.5 bg-white border border-slate-200 rounded-xl space-y-3 shadow-sm text-xs";
+
+        card.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+            <span class="font-bold text-sm text-slate-800">${parseInt(dayNum)}日 (${dayOfWeekStr})</span>
+            <div class="flex items-center gap-2">
+              <label class="font-bold text-slate-600">状態:</label>
+              <select onchange="updateDaySchedule('${dateKey}', 'status', this.value)" class="border p-1 rounded font-bold bg-white">
+                <option value="ON" ${sched.status === 'ON' ? 'selected' : ''}>通常開催</option>
+                <option value="OFF" ${sched.status === 'OFF' ? 'selected' : ''}>OFF (休み)</option>
+                <option value="EMERGENCY" ${sched.status === 'EMERGENCY' ? 'selected' : ''}>直前変更あり</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">時間設定</label>
+              <div class="flex items-center gap-1">
+                <input type="time" value="${sched.startTime}" onchange="updateDaySchedule('${dateKey}', 'startTime', this.value)" class="border p-1 rounded w-full bg-white">
+                <span>〜</span>
+                <input type="time" value="${sched.endTime}" onchange="updateDaySchedule('${dateKey}', 'endTime', this.value)" class="border p-1 rounded w-full bg-white">
+              </div>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">練習場所</label>
+              <input type="text" value="${sched.location || '学校グラウンド'}" onchange="updateDaySchedule('${dateKey}', 'location', this.value)" class="border p-1 rounded w-full bg-white">
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-600 mb-1">連絡・注意事項メモ</label>
+            <input type="text" value="${sched.note || ''}" placeholder="例: 雨天時は体育館シューズ持参" onchange="updateDaySchedule('${dateKey}', 'note', this.value)" class="border p-1 rounded w-full bg-white">
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function updateDaySchedule(dateKey, field, value) {
+      if (!schedules[currentMonth]) schedules[currentMonth] = {};
+      if (!schedules[currentMonth][dateKey]) schedules[currentMonth][dateKey] = {};
+      
+      schedules[currentMonth][dateKey][field] = value;
+      pushDataToCloud();
+      renderApp();
+    }
+
+    function applyBulkTimes() {
+      const start = document.getElementById('bulk-start-time').value;
+      const end = document.getElementById('bulk-end-time').value;
+
+      if (!schedules[currentMonth]) return;
+
+      Object.keys(schedules[currentMonth]).forEach(d => {
+        schedules[currentMonth][d].startTime = start;
+        schedules[currentMonth][d].endTime = end;
+      });
+
+      pushDataToCloud();
+      renderApp();
+      alert("全日の練習時間を一括更新しました。");
+    }
+
+    function applyBulkDayOffs() {
+      const checks = document.querySelectorAll('.day-off-check:checked');
+      const offDays = Array.from(checks).map(c => parseInt(c.value));
+
+      if (!schedules[currentMonth]) return;
+
+      Object.keys(schedules[currentMonth]).forEach(dateKey => {
+        const dayOfWeek = new Date(dateKey).getDay();
+        if (offDays.includes(dayOfWeek)) {
+          schedules[currentMonth][dateKey].status = 'OFF';
         }
-
-        function populateStudentSelect() {
-            const select = document.getElementById('studentNameSelect');
-            const emSelect = document.getElementById('emergencyStudentSelect');
-            
-            const currVal = select.value || window.APP_STATE.selectedStudent;
-
-            select.innerHTML = '<option value="">-- 名前を選択 --</option>';
-            emSelect.innerHTML = '<option value="">-- 名前を選択 --</option>';
-
-            window.APP_STATE.members.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m; opt.textContent = m;
-                if (m === currVal) opt.selected = true;
-                select.appendChild(opt);
-
-                const optEm = document.createElement('option');
-                optEm.value = m; optEm.textContent = m;
-                emSelect.appendChild(optEm);
-            });
-        }
-
-        window.promptAddNewMonth = function() {
-            const input = prompt("追加したい年月を入力してください (例: 2026-10):");
-            if (input && /^\d{4}-\d{2}$/.test(input)) {
-                setupDefaultSchedules(input);
-                window.APP_STATE.currentMonthKey = input;
-                syncToCloud();
-                initMonthSelectors();
-                renderStudentView();
-            } else if (input) {
-                alert("YYYY-MM 形式で入力してください。");
-            }
-        };
-
-        window.onStudentMonthChange = function() {
-            window.APP_STATE.currentMonthKey = document.getElementById('studentMonthSelect').value;
-            setupDefaultSchedules(window.APP_STATE.currentMonthKey);
-            renderStudentView();
-            renderPublicMatrix();
-        };
-
-        window.onStudentSelectChange = function() {
-            window.APP_STATE.selectedStudent = document.getElementById('studentNameSelect').value;
-            renderStudentView();
-        };
-
-        function renderStudentView() {
-            const container = document.getElementById('studentScheduleContainer');
-            const student = window.APP_STATE.selectedStudent;
-            const mKey = window.APP_STATE.currentMonthKey;
-
-            const monthData = window.APP_STATE.schedules[mKey] || {};
-            const dates = Object.keys(monthData).sort();
-
-            // Set Header Summary Time Display
-            if (dates.length > 0) {
-                document.getElementById('studentPracticeTimeDisplay').textContent = monthData[dates[0]].time;
-                document.getElementById('studentPracticeLocationDisplay').textContent = monthData[dates[0]].location;
-            }
-
-            if (!student) {
-                container.innerHTML = `
-                    <div class="bg-white p-8 rounded-2xl text-center text-slate-400 border border-slate-200 shadow-sm">
-                        <i class="fa-regular fa-id-card text-4xl mb-2 text-slate-300"></i>
-                        <p class="font-bold">名前を選択すると出欠入力カードが表示されます</p>
-                    </div>`;
-                return;
-            }
-
-            let html = "";
-            dates.forEach(dateStr => {
-                const item = monthData[dateStr];
-                const dObj = new Date(dateStr);
-                const dayNum = dObj.getDate();
-                const dayOfWeekStr = ['日', '月', '火', '水', '木', '金', '土'][dObj.getDay()];
-                const isSunday = dObj.getDay() === 0;
-                const isSaturday = dObj.getDay() === 6;
-
-                let dayColor = "text-slate-700";
-                if (isSunday) dayColor = "text-rose-600";
-                if (isSaturday) dayColor = "text-blue-600";
-
-                const currentAtt = (window.APP_STATE.attendances[mKey] && window.APP_STATE.attendances[mKey][student]) ? window.APP_STATE.attendances[mKey][student][dateStr] : "";
-
-                if (item.isOff) {
-                    html += `
-                    <div class="bg-slate-100/80 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between opacity-75">
-                        <div class="flex items-center space-x-3">
-                            <div class="text-center font-bold px-2.5 py-1 bg-white rounded-xl shadow-xs border border-slate-200">
-                                <span class="text-xs text-slate-400 block">${dayOfWeekStr}</span>
-                                <span class="text-base ${dayColor}">${dayNum}</span>
-                            </div>
-                            <div>
-                                <span class="text-xs font-bold text-slate-500 bg-slate-200 px-2.5 py-1 rounded-full">休養日 (OFF)</span>
-                            </div>
-                        </div>
-                    </div>`;
-                } else {
-                    html += `
-                    <div class="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-sm space-y-2">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <div class="text-center font-bold px-2.5 py-1 bg-slate-50 rounded-xl border border-slate-200">
-                                    <span class="text-xs ${dayColor} block">${dayOfWeekStr}</span>
-                                    <span class="text-lg ${dayColor}">${dayNum}</span>
-                                </div>
-                                <div>
-                                    <div class="text-xs font-bold text-slate-700"><i class="fa-solid fa-clock text-emerald-600 mr-1"></i>${item.time}</div>
-                                    <div class="text-xs text-slate-500"><i class="fa-solid fa-location-dot text-emerald-600 mr-1"></i>${item.location}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-3 gap-2 pt-1">
-                            <button onclick="submitAttendance('${dateStr}', '◯')" class="touch-action-manipulation py-2.5 rounded-xl font-black text-lg sm:text-xl transition flex flex-col items-center justify-center ${currentAtt === '◯' ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 shadow-md scale-[1.02]' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}">
-                                ◯ <span class="text-[10px] font-normal">参加</span>
-                            </button>
-                            <button onclick="submitAttendance('${dateStr}', '△')" class="touch-action-manipulation py-2.5 rounded-xl font-black text-lg sm:text-xl transition flex flex-col items-center justify-center ${currentAtt === '△' ? 'bg-amber-500 text-white ring-2 ring-amber-500 shadow-md scale-[1.02]' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'}">
-                                △ <span class="text-[10px] font-normal">遅刻/一部</span>
-                            </button>
-                            <button onclick="submitAttendance('${dateStr}', '✕')" class="touch-action-manipulation py-2.5 rounded-xl font-black text-lg sm:text-xl transition flex flex-col items-center justify-center ${currentAtt === '✕' ? 'bg-rose-600 text-white ring-2 ring-rose-600 shadow-md scale-[1.02]' : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'}">
-                                ✕ <span class="text-[10px] font-normal">不参加</span>
-                            </button>
-                        </div>
-                    </div>`;
-                }
-            });
-
-            container.innerHTML = html;
-        }
-
-        window.submitAttendance = function(dateStr, val) {
-            const student = window.APP_STATE.selectedStudent;
-            const mKey = window.APP_STATE.currentMonthKey;
-
-            if (!student) return;
-
-            if (!window.APP_STATE.attendances[mKey]) window.APP_STATE.attendances[mKey] = {};
-            if (!window.APP_STATE.attendances[mKey][student]) window.APP_STATE.attendances[mKey][student] = {};
-
-            window.APP_STATE.attendances[mKey][student][dateStr] = val;
-
-            syncToCloud();
-            renderStudentView();
-            renderPublicMatrix();
-        };
-
-        function renderPublicMatrix() {
-            const mKey = window.APP_STATE.currentMonthKey;
-            const headerRow = document.getElementById('publicMatrixHeaderRow');
-            const tbody = document.getElementById('publicMatrixTableBody');
-
-            const monthData = window.APP_STATE.schedules[mKey] || {};
-            const dates = Object.keys(monthData).sort();
-
-            let countCircle = 0, countTriangle = 0, countCross = 0;
-
-            // Header
-            let headerHTML = `<th class="p-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 min-w-[100px]">部員名</th>`;
-            dates.forEach(dStr => {
-                const dObj = new Date(dStr);
-                const isOff = monthData[dStr].isOff;
-                headerHTML += `<th class="p-2 text-center border-r border-slate-200 min-w-[36px] ${isOff ? 'bg-slate-200/60 text-slate-400' : ''}">${dObj.getDate()}</th>`;
-            });
-            headerRow.innerHTML = headerHTML;
-
-            // Body
-            let bodyHTML = "";
-            if (window.APP_STATE.members.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${dates.length + 1}" class="p-4 text-center text-slate-400">登録部員がいません</td></tr>`;
-                return;
-            }
-
-            window.APP_STATE.members.forEach(member => {
-                bodyHTML += `<tr class="hover:bg-slate-50">`;
-                bodyHTML += `<td class="p-2.5 font-bold text-slate-800 sticky left-0 bg-white border-r border-slate-200 whitespace-nowrap">${member}</td>`;
-
-                dates.forEach(dStr => {
-                    const isOff = monthData[dStr].isOff;
-                    const att = (window.APP_STATE.attendances[mKey] && window.APP_STATE.attendances[mKey][member]) ? window.APP_STATE.attendances[mKey][member][dStr] : "-";
-                    
-                    let badgeClass = "text-slate-300";
-                    if (att === "◯") { badgeClass = "text-emerald-600 font-black"; countCircle++; }
-                    if (att === "△") { badgeClass = "text-amber-500 font-black"; countTriangle++; }
-                    if (att === "✕") { badgeClass = "text-rose-600 font-black"; countCross++; }
-
-                    bodyHTML += `<td class="p-2 text-center border-r border-slate-100 ${isOff ? 'bg-slate-100/50' : ''}">
-                        <span class="${badgeClass}">${isOff ? 'OFF' : (att || '-')}</span>
-                    </td>`;
-                });
-
-                bodyHTML += `</tr>`;
-            });
-
-            tbody.innerHTML = bodyHTML;
-
-            document.getElementById('summaryCountCircle').textContent = `◯ ${countCircle}件`;
-            document.getElementById('summaryCountTriangle').textContent = `△ ${countTriangle}件`;
-            document.getElementById('summaryCountCross').textContent = `✕ ${countCross}件`;
-        }
-
-        // Emergency Banner Dynamic Logic (Trigger: 前日20:00 〜 朝練開始時刻)
-        function checkEmergencyBannerTrigger() {
-            const now = new Date();
-            const hours = now.getHours();
-            const banner = document.getElementById('emergencyBanner');
-
-            // Shows banner between 20:00 (8 PM) and 08:00 (8 AM)
-            if (hours >= 20 || hours < 8) {
-                banner.classList.remove('hidden');
-            } else {
-                banner.classList.add('hidden');
-            }
-        }
-
-        window.openEmergencyModal = function() {
-            document.getElementById('emergencyModal').classList.remove('hidden');
-            if (window.APP_STATE.selectedStudent) {
-                document.getElementById('emergencyStudentSelect').value = window.APP_STATE.selectedStudent;
-            }
-            const tomorrow = new Date();
-            if (new Date().getHours() >= 20) tomorrow.setDate(tomorrow.getDate() + 1);
-            document.getElementById('emergencyDateInput').value = tomorrow.toISOString().slice(0, 10);
-        };
-
-        window.closeEmergencyModal = function() {
-            document.getElementById('emergencyModal').classList.add('hidden');
-        };
-
-        window.submitEmergencyChange = function() {
-            const student = document.getElementById('emergencyStudentSelect').value;
-            const dateStr = document.getElementById('emergencyDateInput').value;
-            const status = document.getElementById('emergencyStatusSelect').value;
-            const reason = document.getElementById('emergencyReasonInput').value.trim();
-
-            if (!student || !dateStr || !reason) {
-                alert("氏名・日付・理由をすべて入力してください。");
-                return;
-            }
-
-            const mKey = dateStr.slice(0, 7);
-            if (!window.APP_STATE.attendances[mKey]) window.APP_STATE.attendances[mKey] = {};
-            if (!window.APP_STATE.attendances[mKey][student]) window.APP_STATE.attendances[mKey][student] = {};
-
-            window.APP_STATE.attendances[mKey][student][dateStr] = status;
-
-            const logEntry = {
-                timestamp: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-                student: student,
-                date: dateStr,
-                status: status,
-                reason: reason
-            };
-
-            window.APP_STATE.emergencyLogs.unshift(logEntry);
-
-            syncToCloud();
-            closeEmergencyModal();
-            renderStudentView();
-            renderPublicMatrix();
-
-            // Trigger EmailJS if configured
-            sendEmailJSNotification(logEntry);
-
-            alert("直前変更を登録・送信しました。");
-        };
-
-        function sendEmailJSNotification(log) {
-            const cfg = window.APP_STATE.emailSettings;
-            if (cfg.publicKey && cfg.serviceId && cfg.templateId && typeof emailjs !== 'undefined') {
-                try {
-                    emailjs.init(cfg.publicKey);
-                    emailjs.send(cfg.serviceId, cfg.templateId, {
-                        student_name: log.student,
-                        target_date: log.date,
-                        new_status: log.status,
-                        reason: log.reason,
-                        time: log.timestamp
-                    });
-                } catch(e) { console.error("EmailJS Error:", e); }
-            }
-        }
-
-        window.openAdminAuthModal = function() {
-            document.getElementById('adminAuthModal').classList.remove('hidden');
-            document.getElementById('adminPinInput').value = "";
-            document.getElementById('adminPinInput').focus();
-        };
-
-        window.closeAdminAuthModal = function() {
-            document.getElementById('adminAuthModal').classList.add('hidden');
-        };
-
-        window.verifyAdminPin = function() {
-            const pin = document.getElementById('adminPinInput').value;
-            if (pin === "2692") {
-                closeAdminAuthModal();
-                document.getElementById('studentView').classList.add('hidden');
-                document.getElementById('adminView').classList.remove('hidden');
-                renderAdminMatrix();
-                renderMemberList();
-                renderEmergencyLogs();
-            } else {
-                alert("パスコードが正しくありません。");
-            }
-        };
-
-        window.exitAdminView = function() {
-            document.getElementById('adminView').classList.add('hidden');
-            document.getElementById('studentView').classList.remove('hidden');
-        };
-
-        window.switchAdminTab = function(tabName) {
-            ['matrix', 'settings', 'members', 'email'].forEach((t, idx) => {
-                const btn = document.getElementById(`adminTab${idx+1}`);
-                const content = document.getElementById(`tabContent${t.charAt(0).toUpperCase() + t.slice(1)}`);
-                if (t === tabName) {
-                    btn.classList.add('bg-emerald-600', 'text-white');
-                    btn.classList.remove('text-slate-500');
-                    content.classList.remove('hidden');
-                } else {
-                    btn.classList.remove('bg-emerald-600', 'text-white');
-                    btn.classList.add('text-slate-500');
-                    content.classList.add('hidden');
-                }
-            });
-        };
-
-        window.onAdminMonthChange = function() {
-            window.APP_STATE.currentMonthKey = document.getElementById('adminMonthSelect').value;
-            setupDefaultSchedules(window.APP_STATE.currentMonthKey);
-            renderAdminMatrix();
-        };
-
-        function renderAdminMatrix() {
-            const mKey = window.APP_STATE.currentMonthKey;
-            const headerRow = document.getElementById('adminMatrixHeaderRow');
-            const tbody = document.getElementById('adminMatrixTableBody');
-
-            const monthData = window.APP_STATE.schedules[mKey] || {};
-            const dates = Object.keys(monthData).sort();
-
-            let headerHTML = `<th class="p-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 min-w-[100px]">部員名</th>`;
-            dates.forEach(dStr => {
-                const dObj = new Date(dStr);
-                const isOff = monthData[dStr].isOff;
-                headerHTML += `<th class="p-2 text-center border-r border-slate-200 min-w-[36px] ${isOff ? 'bg-slate-200/60 text-slate-400' : ''}">${dObj.getDate()}</th>`;
-            });
-            headerRow.innerHTML = headerHTML;
-
-            let bodyHTML = "";
-            window.APP_STATE.members.forEach(member => {
-                bodyHTML += `<tr class="hover:bg-slate-50">`;
-                bodyHTML += `<td class="p-2.5 font-bold text-slate-800 sticky left-0 bg-white border-r border-slate-200 whitespace-nowrap">${member}</td>`;
-
-                dates.forEach(dStr => {
-                    const isOff = monthData[dStr].isOff;
-                    const att = (window.APP_STATE.attendances[mKey] && window.APP_STATE.attendances[mKey][member]) ? window.APP_STATE.attendances[mKey][member][dStr] : "-";
-                    
-                    let badgeClass = "text-slate-300";
-                    if (att === "◯") badgeClass = "text-emerald-600 font-black";
-                    if (att === "△") badgeClass = "text-amber-500 font-black";
-                    if (att === "✕") badgeClass = "text-rose-600 font-black";
-
-                    bodyHTML += `<td class="p-2 text-center border-r border-slate-100 ${isOff ? 'bg-slate-100/50' : ''}">
-                        <span class="${badgeClass}">${isOff ? 'OFF' : (att || '-')}</span>
-                    </td>`;
-                });
-
-                bodyHTML += `</tr>`;
-            });
-
-            tbody.innerHTML = bodyHTML;
-        }
-
-        window.addNewMember = function() {
-            const input = document.getElementById('newMemberNameInput');
-            const name = input.value.trim();
-            if (!name) return;
-
-            if (!window.APP_STATE.members.includes(name)) {
-                window.APP_STATE.members.push(name);
-                input.value = "";
-                syncToCloud();
-                populateStudentSelect();
-                renderMemberList();
-                renderAdminMatrix();
-                renderPublicMatrix();
-            } else {
-                alert("既に登録されています。");
-            }
-        };
-
-        window.removeMember = function(name) {
-            if (confirm(`${name} 部員を削除しますか？`)) {
-                window.APP_STATE.members = window.APP_STATE.members.filter(m => m !== name);
-                syncToCloud();
-                populateStudentSelect();
-                renderMemberList();
-                renderAdminMatrix();
-                renderPublicMatrix();
-            }
-        };
-
-        function renderMemberList() {
-            const container = document.getElementById('adminMemberList');
-            let html = "";
-            if (window.APP_STATE.members.length === 0) {
-                container.innerHTML = `<p class="text-xs text-slate-400 p-2">登録部員がいません</p>`;
-                return;
-            }
-            window.APP_STATE.members.forEach(m => {
-                html += `
-                <div class="flex justify-between items-center py-1.5 px-2">
-                    <span class="font-bold text-xs text-slate-700">${m}</span>
-                    <button onclick="removeMember('${m}')" class="text-rose-600 hover:text-rose-800 text-xs px-2 py-1 rounded hover:bg-rose-50 transition">
-                        <i class="fa-solid fa-trash"></i> 削除
-                    </button>
-                </div>`;
-            });
-            container.innerHTML = html;
-        }
-
-        window.applyMonthScheduleSettings = function() {
-            const monthInput = document.getElementById('adminCreateMonthInput').value;
-            if (!monthInput) {
-                alert("対象月を選択してください。");
-                return;
-            }
-
-            const time = document.getElementById('adminDefaultTimeInput').value;
-            const location = document.getElementById('adminDefaultLocationInput').value;
-            
-            const offCheckboxes = document.querySelectorAll('input[name="offDay"]:checked');
-            const offDays = Array.from(offCheckboxes).map(cb => parseInt(cb.value));
-
-            const [year, month] = monthInput.split('-').map(Number);
-            const daysInMonth = new Date(year, month, 0).getDate();
-
-            window.APP_STATE.schedules[monthInput] = {};
-
-            for (let d = 1; d <= daysInMonth; d++) {
-                const dateStr = `${monthInput}-${String(d).padStart(2, '0')}`;
-                const dayOfWeek = new Date(year, month - 1, d).getDay();
-                const isOff = offDays.includes(dayOfWeek);
-
-                window.APP_STATE.schedules[monthInput][dateStr] = {
-                    time: time,
-                    location: location,
-                    isOff: isOff
-                };
-            }
-
-            window.APP_STATE.currentMonthKey = monthInput;
-            syncToCloud();
-            initMonthSelectors();
-            renderAdminMatrix();
-            renderPublicMatrix();
-            alert(`${monthInput} の練習スケジュールを一括生成・クラウド保存しました。`);
-        };
-
-        function renderEmergencyLogs() {
-            const container = document.getElementById('emergencyLogList');
-            if (window.APP_STATE.emergencyLogs.length === 0) {
-                container.innerHTML = `<p class="text-slate-400 italic">直前変更のログはありません</p>`;
-                return;
-            }
-
-            let html = "";
-            window.APP_STATE.emergencyLogs.slice(0, 10).forEach(log => {
-                html += `
-                <div class="bg-white p-2 rounded-lg border border-rose-100 flex flex-col gap-0.5">
-                    <div class="flex justify-between items-center font-bold text-rose-900">
-                        <span>${log.student} (${log.date}) ➔ <span class="underline">${log.status}</span></span>
-                        <span class="text-[10px] text-slate-400">${log.timestamp}</span>
-                    </div>
-                    <p class="text-slate-600 text-[11px]">理由: ${log.reason}</p>
-                </div>`;
-            });
-            container.innerHTML = html;
-        }
-
-        window.saveEmailJSSettings = function() {
-            window.APP_STATE.emailSettings = {
-                publicKey: document.getElementById('emailjsPublicKey').value.trim(),
-                serviceId: document.getElementById('emailjsServiceId').value.trim(),
-                templateId: document.getElementById('emailjsTemplateId').value.trim()
-            };
-            syncToCloud();
-            alert("EmailJS設定をクラウドに保存しました。");
-        };
-
-        window.exportCSV = function() {
-            const mKey = window.APP_STATE.currentMonthKey;
-            const monthData = window.APP_STATE.schedules[mKey] || {};
-            const dates = Object.keys(monthData).sort();
-
-            let csvContent = "\uFEFF部員名"; // BOM for UTF-8 Excel compatibility
-            dates.forEach(dStr => {
-                csvContent += `,${dStr}`;
-            });
-            csvContent += "\n";
-
-            window.APP_STATE.members.forEach(m => {
-                csvContent += `${m}`;
-                dates.forEach(dStr => {
-                    const att = (window.APP_STATE.attendances[mKey] && window.APP_STATE.attendances[mKey][m]) ? window.APP_STATE.attendances[mKey][m][dStr] : "-";
-                    csvContent += `,${att || '-'}`;
-                });
-                csvContent += "\n";
-            });
-
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `サッカー部朝練出欠_${mKey}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-
-        // Initialize Tab view
-        window.switchAdminTab('matrix');
-    </script>
+      });
+
+      pushDataToCloud();
+      renderApp();
+      alert("選択された曜日をOFFに一括設定しました。");
+    }
+
+    function addNewMonth() {
+      const val = document.getElementById('new-month-input').value;
+      if (!val) { alert("月を選択してください。"); return; }
+
+      currentMonth = val;
+      ensureScheduleForMonth(currentMonth);
+      pushDataToCloud();
+      renderApp();
+      alert(`${val.replace('-', '年')}月を追加しました。`);
+    }
+
+    function renderAdvisorMemberList() {
+      const container = document.getElementById('advisor-member-list');
+      container.innerHTML = '';
+
+      if (members.length === 0) {
+        container.innerHTML = '<p class="p-3 text-slate-400 italic">部員が登録されていません。</p>';
+        return;
+      }
+
+      members.forEach(m => {
+        const row = document.createElement('div');
+        row.className = "p-3 flex justify-between items-center hover:bg-slate-50";
+        row.innerHTML = `
+          <span class="font-bold text-slate-700"><i class="fa-solid fa-user mr-2 text-slate-400"></i>${m}</span>
+          <button onclick="deleteMember('${m}')" class="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-red-50 rounded border border-red-200">
+            <i class="fa-solid fa-trash-can mr-1"></i>削除
+          </button>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function renderEmergencyLogs() {
+      const container = document.getElementById('emergency-log-list');
+      container.innerHTML = '';
+
+      if (emergencyLogs.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 italic">直近の緊急変更ログはありません。</p>';
+        return;
+      }
+
+      emergencyLogs.forEach(log => {
+        const div = document.createElement('div');
+        div.className = "bg-white p-2 rounded border border-amber-200 text-xs flex justify-between items-center";
+        div.innerHTML = `
+          <div>
+            <span class="font-bold text-amber-900">${log.dateKey} (${log.time})</span>:
+            <span class="font-bold text-slate-800">${log.member}</span> が <span class="font-bold text-red-600">${log.status}</span> に変更
+            ${log.reason ? `<span class="text-slate-500">（理由: ${log.reason}）</span>` : ''}
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function isEmergencyWindow() {
+      const now = new Date();
+      const hours = now.getHours();
+      return (hours >= 20 || hours < 9);
+    }
+
+    function checkEmergencyBannerWindow() {
+      if (isEmergencyWindow()) {
+        document.getElementById('emergency-banner').classList.remove('hidden');
+      }
+    }
+
+    function exportCSV() {
+      const monthSched = schedules[currentMonth] || {};
+      const dates = Object.keys(monthSched).sort();
+
+      let csv = '\uFEFF部員名,' + dates.map(d => `${parseInt(d.split('-')[2])}日`).join(',') + '\n';
+
+      members.forEach(m => {
+        let row = `"${m}"`;
+        dates.forEach(d => {
+          const isOff = monthSched[d].status === 'OFF';
+          if (isOff) {
+            row += ',"OFF"';
+          } else {
+            const resp = (responses[currentMonth] && responses[currentMonth][d] && responses[currentMonth][d][m]) || {};
+            row += `,"${resp.status || ''}"`;
+          }
+        });
+        csv += row + '\n';
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `soccer_attendance_${currentMonth}.csv`;
+      link.click();
+    }
+  </script>
 </body>
 </html>
